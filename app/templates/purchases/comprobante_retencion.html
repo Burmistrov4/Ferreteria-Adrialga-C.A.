@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block title %}Comprobante de Retención{% endblock %}
+{% block page_title %}Comprobante de Retención{% endblock %}
+
+{% block content %}
+<style>
+.retencion-doc { 
+    max-width: 800px; 
+    margin: 0 auto; 
+    border: 1px solid #000; 
+    padding: 2rem; 
+    font-family: Arial, sans-serif;
+    font-size: 0.9rem;
+}
+.retencion-header { 
+    text-align: center; 
+    border-bottom: 2px solid #000; 
+    padding-bottom: 1rem; 
+    margin-bottom: 1rem; 
+}
+.retencion-title { 
+    font-size: 1.2rem; 
+    font-weight: bold; 
+    margin-bottom: 0.5rem; 
+}
+.retencion-section { 
+    margin-bottom: 1.5rem; 
+}
+.retencion-label { 
+    font-weight: bold; 
+    display: inline-block; 
+    width: 200px; 
+}
+.tabla-retencion { 
+    width: 100%; 
+    border-collapse: collapse; 
+    margin-top: 1rem; 
+}
+.tabla-retencion th, .tabla-retencion td { 
+    border: 1px solid #000; 
+    padding: 0.5rem; 
+    text-align: left; 
+}
+.tabla-retencion th { 
+    background: #f0f0f0; 
+    font-weight: bold; 
+}
+.retencion-footer { 
+    margin-top: 2rem; 
+    padding-top: 1rem; 
+    border-top: 1px solid #000; 
+    text-align: center; 
+    font-size: 0.8rem; 
+}
+</style>
+
+<div class="retencion-doc">
+    <div class="retencion-header">
+        <div class="retencion-title">COMPROBANTE DE RETENCIÓN</div>
+        <div>FERRETERÍA ADRIALGA, C.A.</div>
+        <div>RIF: J-405837357</div>
+        <div>Dirección: [Dirección Fiscal]</div>
+    </div>
+
+    <div class="retencion-section">
+        <div class="retencion-label">Número de Comprobante:</div>
+        <span>{{ retencion.numero_comprobante }}</span>
+        <br>
+        <div class="retencion-label">Fecha de Retención:</div>
+        <span>{{ retencion.fecha_retencion.strftime('%d/%m/%Y') }}</span>
+    </div>
+
+    <div class="retencion-section">
+        <div class="retencion-label">Agente de Retención:</div>
+        <strong>FERRETERÍA ADRIALGA, C.A.</strong><br>
+        RIF: J-405837357<br>
+        Dirección: [Dirección Fiscal]<br>
+        Teléfono: [Teléfono]
+    </div>
+
+    <div class="retencion-section">
+        <div class="retencion-label">Sujeto Retenido:</div>
+        <strong>{{ proveedor.razon_social }}</strong><br>
+        RIF: {{ proveedor.rif }}<br>
+        Dirección: {{ proveedor.direccion or '-' }}<br>
+        Teléfono: {{ proveedor.telefono or '-' }}
+    </div>
+
+    <div class="retencion-section">
+        <div class="retencion-label">Factura/Control:</div>
+        {{ compra.numero_control }}<br>
+        <div class="retencion-label">Fecha de Compra:</div>
+        {{ compra.fecha_compra.strftime('%d/%m/%Y') }}
+    </div>
+
+    <table class="tabla-retencion">
+        <thead>
+            <tr>
+                <th>Concepto</th>
+                <th>Base Imponible (Bs)</th>
+                <th>% Retención</th>
+                <th>Monto Retenido (Bs)</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>
+                    {% if retencion.tipo == 'IVA' %}
+                        RETENCIÓN DE IVA
+                    {% else %}
+                        RETENCIÓN DE ISLR
+                    {% endif %}
+                </td>
+                <td class="text-end">{{ "%.2f"|format(retencion.base_imponible) }}</td>
+                <td class="text-center">{{ "%.2f"|format(retencion.porcentaje_retencion) }}%</td>
+                <td class="text-end">{{ "%.2f"|format(retencion.monto_retenido) }}</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="retencion-footer">
+        <p>Este documento constituye un comprobante de retención de impuestos conforme a las normativas del SENIAT.</p>
+        <p>Generado automáticamente por el Sistema ERP Ferretería Adrialga C.A.</p>
+        <p>Fecha de impresión: {{ "now"|date("d/m/Y H:i") }}</p>
+    </div>
+</div>
+
+<div class="text-center mt-3">
+    <button class="btn btn-primary btn-sm" onclick="window.print()">
+        <i class="bi bi-printer me-1"></i> Imprimir
+    </button>
+    <button class="btn btn-secondary btn-sm" onclick="window.close()">
+        <i class="bi bi-x-circle me-1"></i> Cerrar
+    </button>
+</div>
+{% endblock %}

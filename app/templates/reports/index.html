@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block title %}Reportes Gerenciales{% endblock %}
+{% block page_title %}Reportes Gerenciales{% endblock %}
+
+{% block content %}
+<style>
+.reporte-card { border: 1px solid #dee2e6; border-radius: 0.5rem; padding: 1rem; margin-bottom: 1rem; }
+</style>
+
+<div class="reporte-card">
+    <div class="row g-2 align-items-end">
+        <div class="col-md-3">
+            <label class="form-label small">Reporte</label>
+            <select id="tipoReporte" class="form-select form-select-sm" title="Tipo de reporte">
+                <option value="mas-vendidos">Top 10 Productos Más Vendidos</option>
+                <option value="rentabilidad">Rentabilidad por Producto</option>
+                <option value="ventas-periodo">Ventas por Período</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label small">Fecha Desde</label>
+            <input type="date" id="fechaDesde" class="form-control form-control-sm" title="Fecha desde">
+        </div>
+        <div class="col-md-3">
+            <label class="form-label small">Fecha Hasta</label>
+            <input type="date" id="fechaHasta" class="form-control form-control-sm" title="Fecha hasta">
+        </div>
+        <div class="col-md-3">
+            <button class="btn btn-primary btn-sm w-100" id="btnGenerar">
+                <i class="bi bi-file-earmark-bar-graph me-1"></i> Generar
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header bg-white">
+        <h6 class="mb-0">Resultados del Reporte</h6>
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0" id="tablaReporte">
+            <thead class="table-light">
+                <tr id="encabezadoReporte">
+                    <th colspan="8" class="text-center text-muted py-4">
+                        Seleccione un tipo de reporte y presione "Generar"
+                    </th>
+                </tr>
+            </thead>
+            <tbody id="tablaReporteBody">
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+document.getElementById('btnGenerar').addEventListener('click', async function() {
+    const tipo = document.getElementById('tipoReporte').value;
+    const fechaDesde = document.getElementById('fechaDesde').value;
+    const fechaHasta = document.getElementById('fechaHasta').value;
+
+    let url = '';
+    let headers = [];
+
+    switch(tipo) {
+        case 'mas-vendidos':
+            url = '/reportes/mas-vendidos';
+            headers = ['Producto', 'Categoría', 'Cantidad', 'Total Bs', 'Total USD'];
+            break;
+        case 'rentabilidad':
+            url = '/reportes/rentabilidad';
+            headers = ['Producto', 'Costo', 'Precio', 'Margen Bs', 'Margen %'];
+            break;
+        case 'ventas-periodo':
+            url = '/reportes/ventas-periodo';
+            headers = ['Fecha', 'Categoría', 'Método Pago', 'Cantidad', 'Total Bs', 'Total USD'];
+            break;
+    }
+
+    try {
+        const resp = await fetch(url);
+        const data = await resp.json();
+
+        const thead = document.getElementById('tablaReporte');
+        const tbody = document.getElementById('tablaReporteBody');
+        const encabezado = document.getElementById('encabezadoReporte');
+
+        // Crear encabezado dinámico
+        encabezado.innerHTML = headers.map(h => `<th>${h}</th>`).join('');
+
+        // Llenar datos
+        if (data && data.length > 0) {
+            let html = '';
+            data.forEach(item => {
+                html += '<tr>';
+                headers.forEach(header => {
+                    const campo = header.toLowerCase().replace(/ /g, '_').replace('%', 'porcentaje');
+                    html += `<td>${item[campo] || '-'}</td>`;
+                });
+                html += '</tr>';
+            });
+            tbody.innerHTML = html;
+        } else {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="${headers.length}" class="text-center text-muted py-4">
+                        No hay datos para mostrar
+                    </td>
+                </tr>
+            `;
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+});
+</script>
+{% endblock %}

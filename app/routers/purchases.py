@@ -1,0 +1,367 @@
+"""
+Router de Compras y Proveedores — Gestión de Compras, Inventario y CxP.
+
+Rutas:
+- GET/POST /compras/proveedores      : CRUD proveedores
+- GET  /compras                      : Listado de compras
+- POST /compras/nueva                : Registrar compra (transacción atómica)
+- GET  /compras/cxp                  : Cuentas por Pagar
+"""
+
+from datetime import date, datetime, timezone
+from decimal import Decimal
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, Request, Query
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.templating import Jinja2Templates
+from sqlalchemy import func, or_, select
+from sqlalchemy.orm import Session
+
+from app.api.deps import require_permission
+from app.db.database import get_db
+from app.models.inventory import KardexMovimiento, Producto
+from app.models.purchases import Compra, CuentaPorPagar, DetalleCompra, Proveedor
+from app.models.sales import TasaRef
+from app.schemas.purchases import (
+    CompraCreate,
+    CompraFiltro,
+    CompraResponse,
+    CuentaPorPagarCreate,
+    CuentaPorPagarResponse,
+    CuentaPorPagarResumen,
+    ProveedorCreate,
+    ProveedorResponse,
+    ProveedorUpdate,
+)
+
+router = APIRouter()
+templates = Jinja2Templates(directory="app/templates")
+
+
+# ============================================================
+# PROVEEDORES
+# ============================================================
+
+@router.get("/compras/proveedores", response_class=HTMLResponse)
+async def proveedores_index(
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("proveedores", "ver")),
+):
+    """Vista de listado y gestión de proveedores."""
+    proveedores = db.execute(
+        select(Proveedor).order_by(Proveedor.razon_social)
+    ).scalars().all()
+
+    return templates.TemplateResponse(
+        request=request,
+        name="purchases/proveedores.html",
+        context={"usuario": usuario, "proveedores": proveedores},
+    )
+
+
+@router.post("/compras/proveedores", response_class=JSONResponse)
+async def proveedor_crear(
+    data: ProveedorCreate,
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("proveedores", "crear")),
+):
+    """Crea un proveedor nuevo."""
+    existente = db.scalar(select(Proveedor).where(Proveedor.rif == data.rif))
+    if existente:
+        return JSONResponse(
+            status_code=400,
+            content={"error": f"Ya existe un proveedor con RIF {data.rif}"},
+        )
+
+    proveedor = Proveedor(**data.model_dump())
+    db.add(proveedor)
+    db.flush()
+
+    return JSONResponse(
+        status_code=201,
+        content={
+            "ok": True,
+            "proveedor": {
+                "id": proveedor.id,
+                "rif": proveedor.rif,
+                "razon_social": proveedor.razon_social,
+            },
+        },
+    )
+
+
+@router.put("/compras/proveedores/{proveedor_id}", response_class=JSONResponse)
+async def proveedor_editar(
+    proveedor_id: int,
+    data: ProveedorUpdate,
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("proveedores", "editar")),
+):
+    """Actualiza datos de un proveedor."""
+    proveedor = db.get(Proveedor, proveedor_id)
+    if not proveedor:
+        return JSONResponse(status_code=404, content={"error": "Proveedor no encontrado"})
+
+    for campo, valor in data.model_dump(exclude_unset=True).items():
+        setattr(proveedor, campo, valor)
+
+    db.flush()
+    return JSONResponse(
+        status_code=200,
+        content={"ok": True, "proveedor": {"id": proveedor.id, "razon_social": proveedor.razon_social}},
+    )
+
+
+# ============================================================
+# COMPRAS
+# ============================================================
+
+@router.get("/compras", response_class=HTMLResponse)
+async def compras_index(
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("compras", "ver")),
+):
+    """Vista principal de compras."""
+    return templates.TemplateResponse(
+        request=request,
+        name="purchases/compras.html",
+        context={"usuario": usuario},
+    )
+
+
+@router.post("/compras/nueva", response_class=JSONResponse)
+async def crear_compra(
+    data: CompraCreate,
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("compras", "crear")),
+):
+    """
+    Registra una compra nueva (transacción atómica).
+
+    Pasos:
+    1. Valida proveedor y número de control.
+    2. Inserta cabecera y detalles.
+    3. Actualiza stock y costo de productos.
+    4. Genera movimientos Kardex ENTRADA.
+    5. Crea Cuenta por Pagar si es a crédito.
+    """
+    try:
+        with db.begin():
+            # 1. Validar proveedor
+            proveedor = db.get(Proveedor, data.proveedor_id)
+            if not proveedor:
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": "Proveedor no válido"},
+                )
+
+            # Validar número de control único
+            existe = db.scalar(
+                select(Compra).where(Compra.numero_control == data.numero_control)
+            )
+            if existe:
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": f"Ya existe una compra con número {data.numero_control}"},
+                )
+
+            # 2. Obtener tasa REF para conversión
+            tasa_ref = db.scalar(select(TasaRef).order_by(TasaRef.fecha.desc()).limit(1))
+            if not tasa_ref:
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": "No hay tasa de cambio registrada."},
+                )
+
+            # 3. Crear cabecera de compra
+            compra = Compra(
+                proveedor_id=data.proveedor_id,
+                usuario_id=usuario.id,
+                numero_control=data.numero_control,
+                subtotal_bs=data.subtotal_bs,
+                iva_bs=data.iva_bs,
+                total_bs=data.total_bs,
+            )
+            db.add(compra)
+            db.flush()
+
+            # 4. Procesar detalles
+            for detalle_data in data.detalles:
+                producto = db.get(Producto, detalle_data.producto_id)
+                if not producto:
+                    raise ValueError(f"Producto {detalle_data.producto_id} no existe")
+
+                # Crear detalle
+                detalle = DetalleCompra(
+                    compra_id=compra.id,
+                    producto_id=detalle_data.producto_id,
+                    cantidad=detalle_data.cantidad,
+                    costo_unitario_bs=detalle_data.costo_unitario_bs,
+                )
+                db.add(detalle)
+
+                # Actualizar stock y costo
+                producto.stock_actual += detalle_data.cantidad
+                # Actualizar costo de referencia (simple: último costo)
+                producto.precio_ref = detalle_data.costo_unitario_bs
+
+                # Kardex ENTRADA
+                kardex = KardexMovimiento(
+                    producto_id=producto.id,
+                    tipo_movimiento="ENTRADA",
+                    cantidad=detalle_data.cantidad,
+                    costo_ref=detalle_data.costo_unitario_bs,
+                    origen_id=compra.id,
+                    fecha=datetime.now(timezone.utc),
+                )
+                db.add(kardex)
+
+            # 5. Cuenta por Pagar si es a crédito
+            if data.forma_pago == "CREDITO":
+                fecha_venc = date.today()
+                if data.dias_credito and data.dias_credito > 0:
+                    from datetime import timedelta
+                    fecha_venc = date.today() + timedelta(days=data.dias_credito)
+
+                cxp = CuentaPorPagar(
+                    compra_id=compra.id,
+                    proveedor_id=proveedor.id,
+                    monto_total_bs=data.total_bs,
+                    saldo_pendiente_bs=data.total_bs,
+                    fecha_vencimiento=fecha_venc,
+                )
+                db.add(cxp)
+
+            # Commit automático al salir del bloque with
+
+        return JSONResponse(
+            status_code=201,
+            content={
+                "ok": True,
+                "compra_id": compra.id,
+                "numero_control": compra.numero_control,
+                "total_bs": float(compra.total_bs),
+            },
+        )
+
+    except ValueError as e:
+        db.rollback()
+        return JSONResponse(status_code=400, content={"error": str(e)})
+    except Exception as e:
+        db.rollback()
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Error al procesar compra: {str(e)}"},
+        )
+
+
+@router.get("/compras/cxp", response_class=HTMLResponse)
+async def cxp_index(
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("compras", "ver")),
+):
+    """Vista de Cuentas por Pagar."""
+    return templates.TemplateResponse(
+        request=request,
+        name="purchases/cxp.html",
+        context={"usuario": usuario},
+    )
+
+
+@router.get("/compras/cxp/data", response_class=JSONResponse)
+async def cxp_data(
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("compras", "ver")),
+    proveedor_id: Optional[int] = Query(default=None),
+):
+    """Consulta de CxP con resumen por proveedor."""
+    stmt = (
+        select(
+            Proveedor.id,
+            Proveedor.razon_social,
+            func.count(CuentaPorPagar.id).label("cantidad_deudas"),
+            func.sum(CuentaPorPagar.monto_total_bs).label("monto_total"),
+            func.sum(CuentaPorPagar.saldo_pendiente_bs).label("saldo_pendiente"),
+            func.sum(
+                func.cast(
+                    func.julianday(CuentaPorPagar.fecha_vencimiento) - func.julianday(date.today()),
+                    Integer,
+                )
+            ).label("dias_promedio"),
+        )
+        .join(CuentaPorPagar, Proveedor.id == CuentaPorPagar.proveedor_id)
+        .group_by(Proveedor.id, Proveedor.razon_social)
+    )
+
+    if proveedor_id:
+        stmt = stmt.where(Proveedor.id == proveedor_id)
+
+    resultados = db.execute(stmt).all()
+
+    resumenes = []
+    for prov_id, razon, cantidad, monto_total, saldo_pend, dias_prom in resultados:
+        # Calcular vencidas (simplificado: saldo > 0 y fecha vencida)
+        vencidas = db.scalar(
+            select(func.count(CuentaPorPagar.id))
+            .where(
+                CuentaPorPagar.proveedor_id == prov_id,
+                CuentaPorPagar.saldo_pendiente_bs > 0,
+                CuentaPorPagar.fecha_vencimiento < date.today(),
+            )
+        ) or 0
+
+        resumenes.append(
+            CuentaPorPagarResumen(
+                proveedor_id=prov_id,
+                proveedor_nombre=razon,
+                cantidad_deudas=cantidad or 0,
+                monto_total=monto_total or Decimal("0.00"),
+                saldo_pendiente=saldo_pend or Decimal("0.00"),
+                vencidas=vencidas,
+            )
+        )
+
+    return {"resumenes": [r.model_dump() for r in resumenes]}
+
+
+@router.post("/compras/cxp/{cxp_id}/abonar", response_class=JSONResponse)
+async def abonar_cxp(
+    cxp_id: int,
+    monto: float,
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("compras", "editar")),
+):
+    """Registra un abono a una cuenta por pagar."""
+    cxp = db.get(CuentaPorPagar, cxp_id)
+    if not cxp:
+        return JSONResponse(status_code=404, content={"error": "CxP no encontrada"})
+
+    monto_bs = Decimal(str(monto))
+    if monto_bs <= 0:
+        return JSONResponse(status_code=400, content={"error": "Monto inválido"})
+
+    if monto_bs > cxp.saldo_pendiente_bs:
+        return JSONResponse(
+            status_code=400,
+            content={"error": f"Monto excede saldo pendiente (Bs {cxp.saldo_pendiente_bs:.2f})"},
+        )
+
+    cxp.saldo_pendiente_bs -= monto_bs
+
+    if cxp.saldo_pendiente_bs == 0:
+        cxp.estado = "PAGADA"  # Asumiendo que existe este estado
+
+    db.flush()
+
+    return JSONResponse(
+        status_code=200,
+        content={
+            "ok": True,
+            "nuevo_saldo": float(cxp.saldo_pendiente_bs),
+            "estado": cxp.estado,
+        },
+    )

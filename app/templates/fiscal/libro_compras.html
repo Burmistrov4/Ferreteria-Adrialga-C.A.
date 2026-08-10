@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+
+{% block title %}Libro de Compras - Fiscal{% endblock %}
+{% block page_title %}Libro de Compras Digital (SENIAT){% endblock %}
+
+{% block content %}
+<style>
+.filtros-card { border: 1px solid #dee2e6; border-radius: 0.5rem; padding: 1rem; margin-bottom: 1rem; }
+.tabla-compras { font-size: 0.85rem; }
+.tabla-compras th { background: #f1f3f5; position: sticky; top: 0; }
+</style>
+
+<div class="filtros-card">
+    <div class="row g-2 align-items-end">
+        <div class="col-md-3">
+            <label class="form-label small">Mes</label>
+            <select id="filtroMes" class="form-select form-select-sm" aria-label="Mes">
+                <option value="">-- Todos --</option>
+                {% for mes_num, mes_nombre in [
+                    ('1', 'Enero'), ('2', 'Febrero'), ('3', 'Marzo'),
+                    ('4', 'Abril'), ('5', 'Mayo'), ('6', 'Junio'),
+                    ('7', 'Julio'), ('8', 'Agosto'), ('9', 'Septiembre'),
+                    ('10', 'Octubre'), ('11', 'Noviembre'), ('12', 'Diciembre')
+                ] %}
+                <option value="{{ mes_num }}">{{ mes_nombre }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label small">Año</label>
+            <input type="number" id="filtroAnio" class="form-control form-control-sm" 
+                   value="{{ date().year }}" min="2000" max="2099" aria-label="Año">
+        </div>
+        <div class="col-md-3">
+            <button class="btn btn-primary btn-sm w-100" id="btnBuscar">
+                <i class="bi bi-search me-1"></i> Buscar
+            </button>
+        </div>
+        <div class="col-md-3">
+            <button class="btn btn-outline-secondary btn-sm w-100" id="btnExportar">
+                <i class="bi bi-download me-1"></i> Exportar CSV
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header bg-white">
+        <div class="d-flex justify-content-between align-items-center">
+            <h6 class="mb-0">Detalle de Compras</h6>
+            <span id="resumenFiltro" class="small text-muted"></span>
+        </div>
+    </div>
+    <div class="card-body p-0" style="max-height: 600px; overflow-y: auto;">
+        <table class="table tabla-compras mb-0">
+            <thead>
+                <tr>
+                    <th>Fecha</th>
+                    <th>RIF Proveedor</th>
+                    <th>Razón Social</th>
+                    <th>N° Factura</th>
+                    <th class="text-end">Total Compra</th>
+                    <th class="text-end">Base Imponible</th>
+                    <th class="text-center">% IVA</th>
+                    <th class="text-end">IVA</th>
+                    <th class="text-end">IVA Retenido</th>
+                    <th>N° Comprobante</th>
+                </tr>
+            </thead>
+            <tbody id="tablaComprasBody">
+                <tr>
+                    <td colspan="10" class="text-center text-muted py-4">
+                        Seleccione un período y presione "Buscar"
+                    </td>
+                </tr>
+            </tbody>
+            <tfoot class="table-light">
+                <tr>
+                    <th colspan="5" class="text-end">Totales:</th>
+                    <th class="text-end" id="totalBase">Bs 0.00</th>
+                    <th></th>
+                    <th class="text-end" id="totalIva">Bs 0.00</th>
+                    <th class="text-end" id="totalIvaRet">Bs 0.00</th>
+                    <th></th>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+
+<script>
+document.getElementById('btnBuscar').addEventListener('click', async function() {
+    const mes = document.getElementById('filtroMes').value;
+    const anio = document.getElementById('filtroAnio').value;
+
+    if (!mes || !anio) {
+        alert('Seleccione mes y año');
+        return;
+    }
+
+    try {
+        const resp = await fetch(`/fiscal/libro-compras/data?mes=${mes}&anio=${anio}`);
+        const data = await resp.json();
+
+        if (data.detalle && data.detalle.length > 0) {
+            const tbody = document.getElementById('tablaComprasBody');
+            let html = '';
+
+            data.detalle.forEach(item => {
+                html += `
+                    <tr>
+                        <td>${item.fecha_compra.toLocaleDateString()}</td>
+                        <td>${item.rif_proveedor}</td>
+                        <td>${item.razon_social}</td>
+                        <td>${item.numero_factura}</td>
+                        <td class="text-end">Bs ${item.total_compra.toFixed(2)}</td>
+                        <td class="text-end">Bs ${item.base_imponible.toFixed(2)}</td>
+                        <td class="text-center">${item.porcentaje_iva.toFixed(0)}%</td>
+                        <td class="text-end">Bs ${item.monto_iva.toFixed(2)}</td>
+                        <td class="text-end">Bs ${item.iva_retenido.toFixed(2)}</td>
+                        <td>${item.numero_comprobante_retencion || '-'}</td>
+                    </tr>
+                `;
+            });
+
+            tbody.innerHTML = html;
+
+            // Actualizar totales
+            document.getElementById('totalBase').textContent = `Bs ${data.total_base_imponible.toFixed(2)}`;
+            document.getElementById('totalIva').textContent = `Bs ${data.total_iva.toFixed(2)}`;
+            document.getElementById('totalIvaRet').textContent = `Bs ${data.total_iva_retenido.toFixed(2)}`;
+            document.getElementById('resumenFiltro').textContent = 
+                `${data.detalle.length} operaciones encontradas`;
+        } else {
+            document.getElementById('tablaComprasBody').innerHTML = `
+                <tr>
+                    <td colspan="10" class="text-center text-muted py-4">
+                        No hay compras registradas para el período seleccionado
+                    </td>
+                </tr>
+            `;
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+});
+
+document.getElementById('btnExportar').addEventListener('click', function() {
+    const mes = document.getElementById('filtroMes').value;
+    const anio = document.getElementById('filtroAnio').value;
+
+    if (!mes || !anio) {
+        alert('Seleccione mes y año para exportar');
+        return;
+    }
+
+    // Redirigir a endpoint de exportación CSV
+    window.location.href = `/fiscal/libro-compras/exportar?mes=${mes}&anio=${anio}`;
+});
+</script>
+{% endblock %}

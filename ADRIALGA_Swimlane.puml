@@ -1,0 +1,178 @@
+@startuml ADRIALGA_Flujograma_Swimlane
+'================================================================
+' DIAGRAMA SWIMLANE VERTICAL — ADRIALGA, C.A.
+' RIF: J-405837357
+' Facturación: Punto de Venta (POS / Sistema S&H SOFTWARE)
+' Inventario y Contabilidad: Kárdex y Libros Físicos
+'================================================================
+
+skinparam backgroundColor #FEFEFE
+skinparam handwritten false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 10
+skinparam activityFontSize 10
+skinparam noteFontSize 8
+skinparam ActivityDiamondBackgroundColor #A5D6A7
+skinparam ActivityDiamondBorderColor #388E3C
+skinparam ActivityDiamondFontSize 9
+skinparam NoteBackgroundColor #FFCC80
+skinparam NoteBorderColor #E65100
+skinparam NoteFontSize 8
+skinparam ArrowColor #37474F
+skinparam ArrowThickness 1.5
+skinparam ActivityBorderColor #455A64
+skinparam ActivityBorderThickness 1
+skinparam conditionStyle diamond
+
+'================================================================
+' CARRILES (SWIMLANES VERTICALES - COLUMNAS)
+'================================================================
+
+|#E3F2FD|CLIENTE|
+|#FFF8E1|PROPIETARIO / VENDEDOR / CAJA|
+|#E8F5E9|ALMACÉN|
+|#F3E5F5|PROVEEDOR|
+|#FFE0B2|CONTADOR|
+
+'================================================================
+' FASE 1: ATENCIÓN Y TOMA DE PEDIDO (INICIO ÚNICO)
+'================================================================
+
+|CLIENTE|
+start
+:Fase 1 — Llega al mostrador de ADRIALGA, C.A.\ny solicita mercancía al Vendedor;
+
+|PROPIETARIO / VENDEDOR / CAJA|
+:Recibe solicitud del cliente;
+
+|ALMACÉN|
+:Consulta disponibilidad física en estantes\ny Kárdex Físico (tarjetas de cartulina);
+note right
+  **Doc 10:** Kárdex Físico de Inventario
+end note
+
+|PROPIETARIO / VENDEDOR / CAJA|
+if (¿Hay disponibilidad del producto en Kárdex/estante?) then (Sí)
+  :Carga producto y precio a la Nota de Pedido;
+  note right
+    **Doc 1:** Nota de Pedido
+  end note
+  
+  |ALMACÉN|
+  :Separa la mercancía físicamente en depósito;
+else (No)
+  |PROPIETARIO / VENDEDOR / CAJA|
+  :Anota producto agotado en la Libreta de Faltantes;
+  note right
+    **Doc 8:** Libreta de Faltantes del Día
+  end note
+endif
+
+|PROPIETARIO / VENDEDOR / CAJA|
+if (¿El cliente solicita artículos adicionales?) then (Sí)
+  :Agrega los artículos adicionales a la Nota de Pedido;
+else (No)
+  :Finaliza la toma del pedido del cliente;
+endif
+
+'================================================================
+' FASE 2: FACTURACIÓN Y COBRO AUTOMATIZADO POR POS (PUNTO DE VENTA)
+'================================================================
+
+|PROPIETARIO / VENDEDOR / CAJA|
+:Fase 2 — Ingresa la Nota de Pedido al Punto de Venta (POS / Sistema S&H Software);
+
+#90CAF9:El sistema POS calcula automáticamente:\nBase Imponible, IVA (16%, 8% o 31%)\ne IGTF (3% si el pago es en divisas);
+note right
+  **Actividad Automática POS / Sistema S&H Software:**
+  Facturación 100% digitalizada por Punto de Venta.
+  No se emite factura escrita a mano.
+end note
+
+:Procesa el cobro por Punto de Venta\n(Efectivo, Pago Móvil, Débito / Crédito);
+
+#90CAF9:El POS emite e imprime la Factura Fiscal SENIAT;
+note right
+  **Doc 5:** Factura Fiscal SENIAT impreso por POS
+  ADRIALGA, C.A. — RIF: J-405837357
+  Desglose automático de alícuotas G, R, A e IGTF
+end note
+
+|CLIENTE|
+:Recibe Factura Fiscal impresa original;
+
+|ALMACÉN|
+:Recibe copia de factura pagada\ny entrega mercancía al cliente;
+
+|CLIENTE|
+:Retira la mercancía y sale de la ferretería;
+
+'================================================================
+' FASE 3: LÓGICA INTELIGENTE DE REABASTECIMIENTO
+'================================================================
+
+|PROPIETARIO / VENDEDOR / CAJA|
+:Fase 3 — Evalúa al final del día la Libreta de Faltantes\ny el Kárdex Físico de Inventario;
+:Calcula el punto de reorden manual:\n(Demanda diaria x Lead Time del proveedor) + Stock de seguridad;
+note right
+  **Lógica Inteligente de Compra:**
+  - Evalúa agotados en Libreta de Faltantes.
+  - Verifica si Stock Kárdex <= Punto Reorden.
+  - Descarta artículos de baja rotación o fuera de temporada.
+end note
+
+if (¿Se alcanzó el Punto de Reorden para comprar mercancía?) then (Sí)
+  :Elabora Orden de Compra manual;
+  note right
+    **Doc 9:** Orden de Compra manual
+  end note
+else (No)
+  :Pospone la compra de mercancía;
+  detach
+endif
+
+'================================================================
+' FASE 4: RECEPCIÓN DE MERCANCÍA Y REGISTRO CONTABLE
+'================================================================
+
+|PROVEEDOR|
+:Fase 4 — Recibe Orden de Compra,\nconfirma disponibilidad y despacha\nmercancía con Nota de Entrega / Factura;
+note right
+  **Doc 15:** Nota de Entrega / Factura Proveedor
+end note
+
+|ALMACÉN|
+:Recibe y verifica físicamente caja por caja\nla mercancía entregada por el proveedor;
+
+|CONTADOR|
+:Recibe copias de facturas, recibos y Reporte Z impreso por POS;
+:Llena a mano el Libro Diario;
+note right
+  **Doc 14:** Libro Diario
+end note
+
+:Actualiza Kárdex Físico sumando entradas de inventario;
+note right
+  **Doc 10:** Kárdex Físico (Entradas)
+end note
+
+:Registra pasivos en Libro de Cuentas por Pagar;
+note right
+  **Doc 11:** Libro Cuentas por Pagar
+end note
+
+:Vaca reportes del POS a Libros de Compras y Ventas\npara Autoliquidación del IVA (Líneas 1-28 SENIAT);
+note right
+  **Doc 7:** Reporte Z del POS
+  **Doc 12 & 13:** Libro de Ventas y Compras
+  **Doc 17:** Hoja Autoliquidación IVA
+end note
+
+'================================================================
+' FIN ÚNICO GENERAL
+'================================================================
+
+:Operaciones del día concluidas.\nCierre contable e inventario actualizado;
+stop
+
+@enduml

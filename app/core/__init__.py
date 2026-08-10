@@ -1,0 +1,1 @@
+# Paquete core — Seguridad, hashing y utilidades

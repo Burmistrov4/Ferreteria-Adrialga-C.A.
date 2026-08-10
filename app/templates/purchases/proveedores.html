@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block title %}Proveedores - Compras{% endblock %}
+{% block page_title %}Gestión de Proveedores{% endblock %}
+
+{% block content %}
+<style>
+.proveedor-card { border: 1px solid #dee2e6; border-radius: 0.5rem; padding: 1rem; margin-bottom: 0.5rem; }
+</style>
+
+<div class="row">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header bg-white">
+                <h6 class="mb-0">Registrar Proveedor</h6>
+            </div>
+            <div class="card-body">
+                <form id="formProveedor">
+                    <div class="mb-2">
+                        <label class="form-label small">RIF</label>
+                        <input type="text" id="rif" class="form-control form-control-sm" placeholder="Ej: J-12345678" required maxlength="12">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small">Razón Social</label>
+                        <input type="text" id="razonSocial" class="form-control form-control-sm" placeholder="Nombre del proveedor" required maxlength="150">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small">Dirección</label>
+                        <textarea id="direccion" class="form-control form-control-sm" rows="2" placeholder="Dirección fiscal"></textarea>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small">Teléfono</label>
+                        <input type="text" id="telefono" class="form-control form-control-sm" placeholder="Ej: 0212-1234567" maxlength="20">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small">Contacto</label>
+                        <input type="text" id="contacto" class="form-control form-control-sm" placeholder="Persona de contacto" maxlength="100">
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm w-100">
+                        <i class="bi bi-person-plus me-1"></i> Registrar
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header bg-white">
+                <h6 class="mb-0">Proveedores Registrados</h6>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-sm mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>RIF</th>
+                            <th>Razón Social</th>
+                            <th>Teléfono</th>
+                            <th>Contacto</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for proveedor in proveedores %}
+                        <tr>
+                            <td>{{ proveedor.rif }}</td>
+                            <td>{{ proveedor.razon_social }}</td>
+                            <td>{{ proveedor.telefono or '-' }}</td>
+                            <td>{{ proveedor.contacto or '-' }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="4" class="text-center text-muted py-3">
+                                No hay proveedores registrados
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('formProveedor').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    const data = {
+        rif: document.getElementById('rif').value,
+        razon_social: document.getElementById('razonSocial').value,
+        direccion: document.getElementById('direccion').value || null,
+        telefono: document.getElementById('telefono').value || null,
+        contacto: document.getElementById('contacto').value || null,
+    };
+
+    try {
+        const resp = await fetch('/compras/proveedores', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+
+        const result = await resp.json();
+
+        if (resp.ok) {
+            alert('Proveedor registrado exitosamente');
+            location.reload();
+        } else {
+            alert('Error: ' + result.error);
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+});
+</script>
+{% endblock %}

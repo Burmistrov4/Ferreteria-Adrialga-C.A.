@@ -1,0 +1,293 @@
+{% extends "base.html" %}
+
+{% block title %}Compras - Proveedores{% endblock %}
+{% block page_title %}Registro de Compras{% endblock %}
+
+{% block content %}
+<style>
+.compra-card { border: 1px solid #dee2e6; border-radius: 0.5rem; padding: 1.5rem; }
+</style>
+
+<div class="row">
+    <div class="col-md-12">
+        <div class="compra-card">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0">Nueva Compra</h5>
+                <button class="btn btn-primary btn-sm" onclick="mostrarFormularioCompra()">
+                    <i class="bi bi-plus-circle me-1"></i> Nueva Compra
+                </button>
+            </div>
+
+            <div id="formularioCompra" style="display: none;">
+                <form id="formCompra">
+                    <div class="row g-2">
+                        <div class="col-md-4">
+                            <label class="form-label small">Proveedor</label>
+                            <select id="proveedorId" class="form-select form-select-sm" required>
+                                <option value="">-- Seleccione --</option>
+                                <!-- Se llena dinámicamente -->
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small">Número de Control</label>
+                            <input type="text" id="numeroControl" class="form-control form-control-sm" 
+                                   placeholder="FC-000001" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small">Forma de Pago</label>
+                            <select id="formaPago" class="form-select form-select-sm">
+                                <option value="CONTADO">Contado</option>
+                                <option value="CREDITO">Crédito</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row g-2 mt-2" id="diasCreditoRow" style="display: none;">
+                        <div class="col-md-4">
+                            <label class="form-label small">Días de Crédito</label>
+                            <input type="number" id="diasCredito" class="form-control form-control-sm" 
+                                   value="30" min="0">
+                        </div>
+                    </div>
+
+                    <hr class="my-3">
+
+                    <div class="table-responsive">
+                        <table class="table table-sm" id="tablaDetalles">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Producto</th>
+                                    <th width="120">Cantidad</th>
+                                    <th width="150">Costo Unit. Bs</th>
+                                    <th width="150">Subtotal</th>
+                                    <th width="50"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr class="fila-detalle">
+                                    <td>
+                                        <select class="form-select form-select-sm producto-select" required>
+                                            <option value="">-- Seleccione --</option>
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <input type="number" class="form-control form-control-sm cantidad-input" 
+                                               value="1" min="0.001" step="0.001" required>
+                                    </td>
+                                    <td>
+                                        <input type="number" class="form-control form-control-sm costo-input" 
+                                               value="0" min="0" step="0.01" required>
+                                    </td>
+                                    <td class="subtotal-cell">Bs 0.00</td>
+                                    <td>
+                                        <button type="button" class="btn btn-danger btn-sm btn-remover" disabled>
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="row mt-3">
+                        <div class="col-md-6 offset-md-6">
+                            <div class="d-flex justify-content-between mb-2">
+                                <span>Subtotal:</span>
+                                <span id="subtotalDisplay">Bs 0.00</span>
+                            </div>
+                            <div class="d-flex justify-content-between mb-2">
+                                <span>IVA (16%):</span>
+                                <span id="ivaDisplay">Bs 0.00</span>
+                            </div>
+                            <div class="d-flex justify-content-between fw-bold">
+                                <span>Total:</span>
+                                <span id="totalDisplay">Bs 0.00</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-3 text-end">
+                        <button type="button" class="btn btn-secondary btn-sm me-2" onclick="ocultarFormularioCompra()">
+                            Cancelar
+                        </button>
+                        <button type="submit" class="btn btn-success btn-sm">
+                            <i class="bi bi-check-circle me-1"></i> Guardar Compra
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let productos = [];
+let detalles = [];
+
+// Cargar proveedores y productos al iniciar
+async function cargarDatos() {
+    // Cargar proveedores
+    const respProv = await fetch('/compras/proveedores');
+    const dataProv = await respProv.json();
+    
+    const selectProv = document.getElementById('proveedorId');
+    dataProv.proveedores.forEach(p => {
+        const option = document.createElement('option');
+        option.value = p.id;
+        option.textContent = p.razon_social;
+        selectProv.appendChild(option);
+    });
+
+    // Cargar productos (simplificado - en producción usar /inventario/productos)
+    productos = [
+        { id: 1, codigo: 'PROD-1', descripcion: 'Martillo', precio_ref: 10.00 },
+        { id: 2, codigo: 'PROD-2', descripcion: 'Destornillador', precio_ref: 5.00 },
+    ];
+
+    const selectProd = document.querySelector('.producto-select');
+    productos.forEach(p => {
+        const option = document.createElement('option');
+        option.value = p.id;
+        option.textContent = `${p.codigo} - ${p.descripcion}`;
+        selectProd.appendChild(option);
+    });
+}
+
+function mostrarFormularioCompra() {
+    document.getElementById('formularioCompra').style.display = 'block';
+}
+
+function ocultarFormularioCompra() {
+    document.getElementById('formularioCompra').style.display = 'none';
+}
+
+// Cambio de forma de pago
+document.getElementById('formaPago').addEventListener('change', function() {
+    const diasRow = document.getElementById('diasCreditoRow');
+    diasRow.style.display = this.value === 'CREDITO' ? 'block' : 'none';
+});
+
+// Calcular subtotales
+document.querySelector('#tablaDetalles tbody').addEventListener('input', function(e) {
+    if (e.target.classList.contains('cantidad-input') || e.target.classList.contains('costo-input')) {
+        actualizarTotales();
+    }
+});
+
+function actualizarTotales() {
+    let subtotal = 0;
+    document.querySelectorAll('.fila-detalle').forEach(fila => {
+        const cantidad = parseFloat(fila.querySelector('.cantidad-input').value) || 0;
+        const costo = parseFloat(fila.querySelector('.costo-input').value) || 0;
+        const subtotalLinea = cantidad * costo;
+        fila.querySelector('.subtotal-cell').textContent = `Bs ${subtotalLinea.toFixed(2)}`;
+        subtotal += subtotalLinea;
+    });
+
+    const iva = subtotal * 0.16;
+    const total = subtotal + iva;
+
+    document.getElementById('subtotalDisplay').textContent = `Bs ${subtotal.toFixed(2)}`;
+    document.getElementById('ivaDisplay').textContent = `Bs ${iva.toFixed(2)}`;
+    document.getElementById('totalDisplay').textContent = `Bs ${total.toFixed(2)}`;
+}
+
+// Agregar línea de detalle
+function agregarDetalle() {
+    const tbody = document.querySelector('#tablaDetalles tbody');
+    const nuevaFila = document.createElement('tr');
+    nuevaFila.className = 'fila-detalle';
+    nuevaFila.innerHTML = `
+        <td>
+            <select class="form-select form-select-sm producto-select" required>
+                <option value="">-- Seleccione --</option>
+                ${productos.map(p => `<option value="${p.id}">${p.codigo} - ${p.descripcion}</option>`).join('')}
+            </select>
+        </td>
+        <td>
+            <input type="number" class="form-control form-control-sm cantidad-input" 
+                   value="1" min="0.001" step="0.001" required>
+        </td>
+        <td>
+            <input type="number" class="form-control form-control-sm costo-input" 
+                   value="0" min="0" step="0.01" required>
+        </td>
+        <td class="subtotal-cell">Bs 0.00</td>
+        <td>
+            <button type="button" class="btn btn-danger btn-sm btn-remover" onclick="removerDetalle(this)">
+                <i class="bi bi-trash"></i>
+            </button>
+        </td>
+    `;
+    tbody.appendChild(nuevaFila);
+    actualizarTotales();
+}
+
+function removerDetalle(btn) {
+    const fila = btn.closest('tr');
+    if (document.querySelectorAll('.fila-detalle').length > 1) {
+        fila.remove();
+        actualizarTotales();
+    }
+}
+
+// Agregar botón de agregar
+document.querySelector('#tablaDetalles thead').insertAdjacentHTML('beforeend', `
+    <tr>
+        <th colspan="5" class="text-end">
+            <button type="button" class="btn btn-outline-primary btn-sm" onclick="agregarDetalle()">
+                <i class="bi bi-plus"></i> Agregar Producto
+            </button>
+        </th>
+    </tr>
+`);
+
+// Enviar formulario
+document.getElementById('formCompra').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    const detalles = [];
+    document.querySelectorAll('.fila-detalle').forEach(fila => {
+        const producto_id = parseInt(fila.querySelector('.producto-select').value);
+        const cantidad = parseFloat(fila.querySelector('.cantidad-input').value);
+        const costo_unitario = parseFloat(fila.querySelector('.costo-input').value);
+        const subtotal = cantidad * costo_unitario;
+        
+        detalles.push({ producto_id, cantidad, costo_unitario_bs: costo_unitario });
+    });
+
+    const data = {
+        proveedor_id: parseInt(document.getElementById('proveedorId').value),
+        numero_control: document.getElementById('numeroControl').value,
+        forma_pago: document.getElementById('formaPago').value,
+        dias_credito: parseInt(document.getElementById('diasCredito').value) || 0,
+        subtotal_bs: parseFloat(document.getElementById('subtotalDisplay').textContent.replace('Bs ', '')),
+        iva_bs: parseFloat(document.getElementById('ivaDisplay').textContent.replace('Bs ', '')),
+        total_bs: parseFloat(document.getElementById('totalDisplay').textContent.replace('Bs ', '')),
+        detalles: detalles,
+    };
+
+    try {
+        const resp = await fetch('/compras/nueva', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+
+        const result = await resp.json();
+
+        if (resp.ok) {
+            alert('Compra registrada exitosamente');
+            location.reload();
+        } else {
+            alert('Error: ' + result.error);
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+});
+
+// Inicializar
+cargarDatos();
+</script>
+{% endblock %}

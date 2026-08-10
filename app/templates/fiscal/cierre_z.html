@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+
+{% block title %}Cierre Z - Fiscal{% endblock %}
+{% block page_title %}Cierre Z Diario{% endblock %}
+
+{% block content %}
+<style>
+.cierre-card { border: 1px solid #dee2e6; border-radius: 0.5rem; padding: 1.5rem; margin-bottom: 1rem; }
+.summary-row { display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid #f1f1f1; }
+.summary-row.total { font-weight: bold; font-size: 1.2rem; border-top: 2px solid #dee2e6; border-bottom: none; padding-top: 1rem; margin-top: 0.5rem; }
+.ticket { font-family: 'Courier New', monospace; background: #f8f9fa; padding: 1rem; border-radius: 0.5rem; }
+</style>
+
+<div class="row">
+    <!-- Panel Izquierdo: Formulario de Cierre -->
+    <div class="col-md-5">
+        <div class="cierre-card">
+            <h5 class="mb-3">Generar Cierre Z</h5>
+            <p class="text-muted small">
+                Este proceso agrupa todas las facturas emitidas desde el último cierre
+                y genera el resumen fiscal diario.
+            </p>
+
+            <div class="alert alert-warning">
+                <strong>Importante:</strong> Una vez generado el Cierre Z,
+                las facturas incluidas no podrán ser modificadas.
+            </div>
+
+            <button id="btnGenerarCierre" class="btn btn-primary w-100">
+                <i class="bi bi-calculator me-2"></i>Generar Cierre Z
+            </button>
+        </div>
+
+        <!-- Últimos Cierres -->
+        <div class="card">
+            <div class="card-header bg-white">
+                <h6 class="mb-0">Cierres Recientes</h6>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-sm mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Facturas</th>
+                            <th>Total Bs</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for cierre in cierres %}
+                        <tr>
+                            <td>{{ cierre.fecha.strftime('%d/%m/%Y %H:%M') }}</td>
+                            <td>{{ cierre.cantidad_operaciones }}</td>
+                            <td>{{ "{:,.2f}".format(cierre.total_ventas_bs) }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="3" class="text-center text-muted py-3">
+                                No hay cierres registrados
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Panel Derecho: Vista Previa / Ticket -->
+    <div class="col-md-7">
+        <div class="card">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">Vista Previa - Resumen Fiscal</h6>
+                <button class="btn btn-sm btn-outline-secondary" id="btnImprimir" disabled>
+                    <i class="bi bi-printer me-1"></i> Imprimir
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="ticketCierre" class="ticket">
+                    <div class="text-center mb-3">
+                        <h5 class="mb-0">FERRETERÍA ADRIALGA, C.A.</h5>
+                        <small>RIF: J-405837357</small>
+                        <br><small>Cierre Z Diario</small>
+                    </div>
+
+                    <div id="datosCierre">
+                        <p class="text-center text-muted">
+                            Presione "Generar Cierre Z" para ver el resumen.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de Confirmación -->
+<div class="modal fade" id="modalConfirmar" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirmar Cierre Z</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>¿Está seguro de generar el Cierre Z?</p>
+                <p class="small text-muted">
+                    Esta acción consolidará todas las facturas emitidas desde el último cierre
+                    y no podrá ser revertida.
+                </p>
+                <div id="previewCierre" class="ticket"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="btnConfirmar">
+                    Confirmar y Generar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('btnGenerarCierre').addEventListener('click', async function() {
+    try {
+        const resp = await fetch('/fiscal/cierre-z/generar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+        });
+
+        const result = await resp.json();
+
+        if (resp.ok) {
+            // Mostrar datos en el ticket
+            const ticket = document.getElementById('datosCierre');
+            ticket.innerHTML = `
+                <div class="summary-row">
+                    <span>Fecha:</span>
+                    <span>${new Date(result.fecha).toLocaleString()}</span>
+                </div>
+                <div class="summary-row">
+                    <span>Factura Inicio:</span>
+                    <span>${result.factura_inicio}</span>
+                </div>
+                <div class="summary-row">
+                    <span>Factura Fin:</span>
+                    <span>${result.factura_fin}</span>
+                </div>
+                <div class="summary-row">
+                    <span>Operaciones:</span>
+                    <span>${result.cantidad_operaciones}</span>
+                </div>
+                <hr>
+                <div class="summary-row">
+                    <span>Total Ventas:</span>
+                    <span>Bs ${result.total_ventas_bs.toFixed(2)}</span>
+                </div>
+                <div class="summary-row">
+                    <span>Total IVA:</span>
+                    <span>Bs ${result.total_iva_bs.toFixed(2)}</span>
+                </div>
+                <div class="summary-row">
+                    <span>Total IGTF:</span>
+                    <span>Bs ${result.total_igtf_bs.toFixed(2)}</span>
+                </div>
+                <div class="summary-row total">
+                    <span>Total General:</span>
+                    <span>Bs ${(result.total_ventas_bs + result.total_iva_bs).toFixed(2)}</span>
+                </div>
+            `;
+
+            // Habilitar botón imprimir
+            document.getElementById('btnImprimir').disabled = false;
+
+            // Recargar página para actualizar lista de cierres
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            alert('Error: ' + result.error);
+        }
+    } catch (err) {
+        alert('Error en el servidor: ' + err.message);
+    }
+});
+
+document.getElementById('btnImprimir').addEventListener('click', function() {
+    window.print();
+});
+</script>
+{% endblock %}

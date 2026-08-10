@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+
+{% block title %}Gestión de Inventario{% endblock %}
+{% block page_title %}Gestión de Inventario y Kárdex{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Barra de herramientas -->
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <div class="input-group">
+                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                <input type="text"
+                       id="busqueda"
+                       class="form-control"
+                       placeholder="Buscar por código o descripción..."
+                       hx-get="/inventario/tabla"
+                       hx-target="#tabla-productos"
+                       hx-trigger="keyup changed delay:300ms"
+                       name="q"
+                       value="{{ q }}">
+            </div>
+        </div>
+        <div class="col-md-2">
+            <select class="form-select"
+                    id="filtro-categoria"
+                    hx-get="/inventario/tabla"
+                    hx-target="#tabla-productos"
+                    hx-trigger="change"
+                    name="categoria_id">
+                <option value="0">Todas las categorías</option>
+                <!-- Las categorías se cargan vía JS -->
+            </select>
+        </div>
+        <div class="col-md-2">
+            <button class="btn btn-primary w-100"
+                    data-bs-toggle="modal"
+                    data-bs-target="#modalProducto"
+                    onclick="abrirModalProducto()">
+                <i class="bi bi-plus-circle me-2"></i>Nuevo Producto
+            </button>
+        </div>
+    </div>
+
+    <!-- Tabla de productos -->
+    <div id="tabla-productos" class="card shadow-sm">
+        {% include "inventory/_partials/tabla_productos.html" %}
+    </div>
+</div>
+
+<!-- Modal Producto -->
+<div class="modal fade" id="modalProducto" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalProductoTitulo">Nuevo Producto</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="formProducto" hx-post="/inventario/productos"
+                      hx-target="#modalProducto"
+                      hx-swap="outerHTML">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Código de Barras *</label>
+                            <input type="text" name="codigo_barras" class="form-control" required maxlength="30">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Descripción *</label>
+                            <input type="text" name="descripcion" class="form-control" required maxlength="150">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Categoría *</label>
+                            <select name="categoria_id" class="form-select" id="selectCategoria" required>
+                                <option value="">Seleccione...</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Alícuota IVA *</label>
+                            <select name="alicuota_id" class="form-select" id="selectAlicuota" required>
+                                <option value="">Seleccione...</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Estado</label>
+                            <select name="activo" class="form-select">
+                                <option value="true">Activo</option>
+                                <option value="false">Inactivo</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Precio Referencia (USD)</label>
+                            <input type="number" step="0.01" name="precio_ref" class="form-control" value="0.00">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Stock Actual</label>
+                            <input type="number" step="0.001" name="stock_actual" class="form-control" value="0.000">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Stock Mínimo</label>
+                            <input type="number" step="0.001" name="stock_minimo" class="form-control" value="0.000">
+                        </div>
+                    </div>
+                    <div class="modal-footer px-0 pb-0 pt-3">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-primary">Guardar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Cargar categorías al montar
+document.addEventListener('DOMContentLoaded', async () => {
+    const [catResp] = await Promise.all([
+        fetch('/inventario/categorias'),
+    ]);
+    const catData = await catResp.json();
+    const selectCat = document.getElementById('selectCategoria');
+    const filtroCat = document.getElementById('filtro-categoria');
+
+    catData.categorias.forEach(c => {
+        selectCat.innerHTML += `<option value="${c.id}">${c.nombre}</option>`;
+        filtroCat.innerHTML += `<option value="${c.id}">${c.nombre}</option>`;
+    });
+
+    // Cargar alícuotas fiscales desde el backend
+    const alicResp = await fetch('/inventario/alicuotas');
+    const alicData = await alicResp.json();
+    const alicSelect = document.getElementById('selectAlicuota');
+    alicData.alicuotas.forEach(a => {
+        alicSelect.innerHTML += `<option value="${a.id}">${a.codigo} - ${a.porcentaje}%</option>`;
+    });
+});
+
+function abrirModalProducto() {
+    // Reset form
+    document.getElementById('formProducto').reset();
+    document.getElementById('modalProductoTitulo').textContent = 'Nuevo Producto';
+}
+
+// Si HTMX redirige, cerrar modal
+document.body.addEventListener('htmx:afterRequest', function(evt) {
+    if (evt.detail.xhr.responseURL && evt.detail.xhr.responseURL.includes('/inventario/productos')) {
+        const modal = bootstrap.Modal.getInstance(document.getElementById('modalProducto'));
+        if (modal) modal.hide();
+    }
+});
+</script>
+{% endblock %}

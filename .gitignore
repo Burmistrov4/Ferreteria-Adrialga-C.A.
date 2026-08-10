@@ -1,0 +1,37 @@
+# Entorno virtual
+venv/
+.venv/
+env/
+ENV/
+
+# Archivos de configuración local y secretos (¡NUNCA SUBIR A GIT!)
+.env
+.env.local
+.env.*.local
+
+# Base de datos SQLite local
+*.db
+*.sqlite
+*.sqlite3
+adrialga.db
+
+# Caché de Python y compilados
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Configuración de IDEs y editores
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Archivos del sistema operativo
+.DS_Store
+Thumbs.db
+
+# Archivos de logs
+*.log

@@ -1,0 +1,1 @@
+# Paquete de scripts de utilidad — Ferretería Adrialga, C.A.

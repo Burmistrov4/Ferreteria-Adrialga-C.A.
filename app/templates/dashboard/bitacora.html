@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% block title %}Bitácora de Auditoría{% endblock %}
+{% block page_title %}Bitácora de Auditoría del Sistema{% endblock %}
+
+{% block content %}
+<style>
+.bitacora-card { border: 1px solid #dee2e6; border-radius: 0.5rem; padding: 1rem; }
+.badge-accion { font-size: 0.75rem; padding: 0.35rem 0.6rem; }
+</style>
+
+<div class="bitacora-card mb-3">
+    <div class="row g-2 align-items-end">
+        <div class="col-md-3">
+            <label class="form-label small">Usuario</label>
+            <input type="text" id="filtroUsuario" class="form-control form-control-sm" placeholder="Nombre de usuario">
+        </div>
+        <div class="col-md-3">
+            <label class="form-label small">Módulo</label>
+            <select id="filtroModulo" class="form-select form-select-sm" aria-label="Módulo">
+                <option value="">-- Todos --</option>
+                <option value="VENTAS">Ventas</option>
+                <option value="INVENTARIO">Inventario</option>
+                <option value="COMPRAS">Compras</option>
+                <option value="FISCAL">Fiscal</option>
+                <option value="AUTH">Autenticación</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label small">Acción</label>
+            <select id="filtroAccion" class="form-select form-select-sm" aria-label="Acción">
+                <option value="">-- Todas --</option>
+                <option value="CREAR">Crear</option>
+                <option value="EDITAR">Editar</option>
+                <option value="ELIMINAR">Eliminar</option>
+                <option value="LOGIN">Login</option>
+                <option value="LOGOUT">Logout</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <button class="btn btn-primary btn-sm w-100" id="btnBuscar">
+                <i class="bi bi-search me-1"></i> Buscar
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header bg-white">
+        <h6 class="mb-0">Registros de Auditoría</h6>
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Fecha/Hora</th>
+                    <th>Usuario</th>
+                    <th>Módulo</th>
+                    <th>Acción</th>
+                    <th>Descripción</th>
+                    <th>IP</th>
+                </tr>
+            </thead>
+            <tbody id="tablaBitacora">
+                <tr>
+                    <td colspan="6" class="text-center text-muted py-4">
+                        Seleccione filtros y presione "Buscar"
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+document.getElementById('btnBuscar').addEventListener('click', async function() {
+    const usuario = document.getElementById('filtroUsuario').value;
+    const modulo = document.getElementById('filtroModulo').value;
+    const accion = document.getElementById('filtroAccion').value;
+
+    // Construir URL con parámetros
+    let url = '/dashboard/auditoria/data?';
+    const params = [];
+    if (usuario) params.push(`usuario=${encodeURIComponent(usuario)}`);
+    if (modulo) params.push(`modulo=${modulo}`);
+    if (accion) params.push(`accion=${accion}`);
+    
+    url += params.join('&');
+
+    try {
+        const resp = await fetch(url);
+        const data = await resp.json();
+
+        const tbody = document.getElementById('tablaBitacora');
+        
+        if (data.items && data.items.length > 0) {
+            let html = '';
+            data.items.forEach(item => {
+                const badgeClass = {
+                    'CREAR': 'bg-success',
+                    'EDITAR': 'bg-primary',
+                    'ELIMINAR': 'bg-danger',
+                    'LOGIN': 'bg-info',
+                    'LOGOUT': 'bg-secondary'
+                }[item.accion] || 'bg-secondary';
+
+                html += `
+                    <tr>
+                        <td>${new Date(item.fecha).toLocaleString()}</td>
+                        <td>${item.usuario_nombre}</td>
+                        <td>${item.modulo}</td>
+                        <td><span class="badge ${badgeClass} badge-accion">${item.accion}</span></td>
+                        <td>${item.descripcion}</td>
+                        <td>${item.ip_address || '-'}</td>
+                    </tr>
+                `;
+            });
+            tbody.innerHTML = html;
+        } else {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="6" class="text-center text-muted py-4">
+                        No se encontraron registros
+                    </td>
+                </tr>
+            `;
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+
+{% block title %}Cuentas por Pagar - Compras{% endblock %}
+{% block page_title %}Cuentas por Pagar (CxP){% endblock %}
+
+{% block content %}
+<style>
+.cxp-card { border: 1px solid #dee2e6; border-radius: 0.5rem; padding: 1.5rem; }
+.estado-pendiente { color: #dc3545; font-weight: bold; }
+.estado-pagada { color: #198754; font-weight: bold; }
+</style>
+
+<div class="row">
+    <div class="col-md-12">
+        <div class="cxp-card">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0">Resumen de Cuentas por Pagar</h5>
+                <button class="btn btn-outline-primary btn-sm" onclick="cargarDatos()">
+                    <i class="bi bi-arrow-clockwise me-1"></i> Actualizar
+                </button>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Proveedor</th>
+                            <th class="text-center">Deudas</th>
+                            <th class="text-end">Monto Total</th>
+                            <th class="text-end">Saldo Pendiente</th>
+                            <th class="text-center">Vencidas</th>
+                            <th class="text-center">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaCxp">
+                        <tr>
+                            <td colspan="6" class="text-center text-muted py-4">
+                                Cargando datos...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de Abono -->
+<div class="modal fade" id="modalAbono" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Registrar Abono</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label small">Proveedor</label>
+                    <input type="text" id="abonoProveedor" class="form-control form-control-sm" 
+                           placeholder="Nombre del proveedor" readonly>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small">Saldo Actual</label>
+                    <input type="text" id="abonoSaldo" class="form-control form-control-sm" 
+                           placeholder="Bs 0.00" readonly>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small">Monto a Abonar (Bs)</label>
+                    <input type="number" id="abonoMonto" class="form-control form-control-sm" 
+                           placeholder="0.00" step="0.01" min="0.01" required>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary btn-sm" id="btnConfirmarAbono">
+                    Confirmar Abono
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let cxpSeleccionada = null;
+
+async function cargarDatos() {
+    try {
+        const resp = await fetch('/compras/cxp/data');
+        const data = await resp.json();
+        
+        const tbody = document.getElementById('tablaCxp');
+        
+        if (data.resumenes && data.resumenes.length > 0) {
+            let html = '';
+            data.resumenes.forEach(r => {
+                html += `
+                    <tr>
+                        <td>${r.proveedor_nombre}</td>
+                        <td class="text-center">${r.cantidad_deudas}</td>
+                        <td class="text-end">Bs ${r.monto_total.toFixed(2)}</td>
+                        <td class="text-end">Bs ${r.saldo_pendiente.toFixed(2)}</td>
+                        <td class="text-center">
+                            ${r.vencidas > 0 ? `<span class="estado-pendiente">${r.vencidas}</span>` : '0'}
+                        </td>
+                        <td class="text-center">
+                            <button class="btn btn-primary btn-sm" onclick='abonar(${JSON.stringify(r)})'>
+                                <i class="bi bi-cash"></i> Abonar
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+            tbody.innerHTML = html;
+        } else {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="6" class="text-center text-muted py-4">
+                        No hay cuentas por pagar registradas
+                    </td>
+                </tr>
+            `;
+        }
+    } catch (err) {
+        alert('Error al cargar datos: ' + err.message);
+    }
+}
+
+function abonar(resumen) {
+    cxpSeleccionada = resumen;
+    document.getElementById('abonoProveedor').value = resumen.proveedor_nombre;
+    document.getElementById('abonoSaldo').value = `Bs ${resumen.saldo_pendiente.toFixed(2)}`;
+    document.getElementById('abonoMonto').value = '';
+    
+    const modal = new bootstrap.Modal(document.getElementById('modalAbono'));
+    modal.show();
+}
+
+document.getElementById('btnConfirmarAbono').addEventListener('click', async function() {
+    if (!cxpSeleccionada) return;
+    
+    const monto = parseFloat(document.getElementById('abonoMonto').value);
+    if (!monto || monto <= 0) {
+        alert('Ingrese un monto válido');
+        return;
+    }
+    
+    if (monto > cxpSeleccionada.saldo_pendiente) {
+        alert(`El monto excede el saldo pendiente (Bs ${cxpSeleccionada.saldo_pendiente.toFixed(2)})`);
+        return;
+    }
+    
+    try {
+        // En una implementación real, necesitaríamos el ID de la CxP específica
+        // Aquí usamos el proveedor_id como referencia simplificada
+        const resp = await fetch(`/compras/cxp/${cxpSeleccionada.proveedor_id}/abonar`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ monto: monto }),
+        });
+        
+        const result = await resp.json();
+        
+        if (resp.ok) {
+            alert(`Abono registrado. Nuevo saldo: Bs ${result.nuevo_saldo.toFixed(2)}`);
+            bootstrap.Modal.getInstance(document.getElementById('modalAbono')).hide();
+            cargarDatos();
+        } else {
+            alert('Error: ' + result.error);
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+});
+
+// Cargar datos al iniciar
+cargarDatos();
+</script>
+{% endblock %}
