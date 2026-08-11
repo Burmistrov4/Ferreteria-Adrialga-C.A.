@@ -54,10 +54,14 @@ async def proveedores_index(
         select(Proveedor).order_by(Proveedor.razon_social)
     ).scalars().all()
 
+    # Detectar petición HTMX para evitar duplicar el sidebar
+    is_htmx = request.headers.get("HX-Request") == "true"
+    base_template = "partial.html" if is_htmx else "base.html"
+
     return templates.TemplateResponse(
         request=request,
         name="purchases/proveedores.html",
-        context={"usuario": usuario, "proveedores": proveedores},
+        context={"usuario": usuario, "proveedores": proveedores, "base_template": base_template},
     )
 
 
@@ -125,10 +129,14 @@ async def compras_index(
     usuario=Depends(require_permission("compras", "ver")),
 ):
     """Vista principal de compras."""
+    # Detectar petición HTMX para evitar duplicar el sidebar
+    is_htmx = request.headers.get("HX-Request") == "true"
+    base_template = "partial.html" if is_htmx else "base.html"
+
     return templates.TemplateResponse(
         request=request,
         name="purchases/compras.html",
-        context={"usuario": usuario},
+        context={"usuario": usuario, "base_template": base_template},
     )
 
 
@@ -149,93 +157,95 @@ async def crear_compra(
     5. Crea Cuenta por Pagar si es a crédito.
     """
     try:
-        with db.begin():
-            # 1. Validar proveedor
-            proveedor = db.get(Proveedor, data.proveedor_id)
-            if not proveedor:
-                return JSONResponse(
-                    status_code=400,
-                    content={"error": "Proveedor no válido"},
-                )
-
-            # Validar número de control único
-            existe = db.scalar(
-                select(Compra).where(Compra.numero_control == data.numero_control)
+        # 1. Validar proveedor
+        proveedor = db.get(Proveedor, data.proveedor_id)
+        if not proveedor:
+            db.rollback()
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Proveedor no válido"},
             )
-            if existe:
-                return JSONResponse(
-                    status_code=400,
-                    content={"error": f"Ya existe una compra con número {data.numero_control}"},
-                )
 
-            # 2. Obtener tasa REF para conversión
-            tasa_ref = db.scalar(select(TasaRef).order_by(TasaRef.fecha.desc()).limit(1))
-            if not tasa_ref:
-                return JSONResponse(
-                    status_code=400,
-                    content={"error": "No hay tasa de cambio registrada."},
-                )
-
-            # 3. Crear cabecera de compra
-            compra = Compra(
-                proveedor_id=data.proveedor_id,
-                usuario_id=usuario.id,
-                numero_control=data.numero_control,
-                subtotal_bs=data.subtotal_bs,
-                iva_bs=data.iva_bs,
-                total_bs=data.total_bs,
+        # Validar número de control único
+        existe = db.scalar(
+            select(Compra).where(Compra.numero_control == data.numero_control)
+        )
+        if existe:
+            db.rollback()
+            return JSONResponse(
+                status_code=400,
+                content={"error": f"Ya existe una compra con número {data.numero_control}"},
             )
-            db.add(compra)
-            db.flush()
 
-            # 4. Procesar detalles
-            for detalle_data in data.detalles:
-                producto = db.get(Producto, detalle_data.producto_id)
-                if not producto:
-                    raise ValueError(f"Producto {detalle_data.producto_id} no existe")
+        # 2. Obtener tasa REF para conversión
+        tasa_ref = db.scalar(select(TasaRef).order_by(TasaRef.fecha.desc()).limit(1))
+        if not tasa_ref:
+            db.rollback()
+            return JSONResponse(
+                status_code=400,
+                content={"error": "No hay tasa de cambio registrada."},
+            )
 
-                # Crear detalle
-                detalle = DetalleCompra(
-                    compra_id=compra.id,
-                    producto_id=detalle_data.producto_id,
-                    cantidad=detalle_data.cantidad,
-                    costo_unitario_bs=detalle_data.costo_unitario_bs,
-                )
-                db.add(detalle)
+        # 3. Crear cabecera de compra
+        compra = Compra(
+            proveedor_id=data.proveedor_id,
+            usuario_id=usuario.id,
+            numero_control=data.numero_control,
+            subtotal_bs=data.subtotal_bs,
+            iva_bs=data.iva_bs,
+            total_bs=data.total_bs,
+        )
+        db.add(compra)
+        db.flush()
 
-                # Actualizar stock y costo
-                producto.stock_actual += detalle_data.cantidad
-                # Actualizar costo de referencia (simple: último costo)
-                producto.precio_ref = detalle_data.costo_unitario_bs
+        # 4. Procesar detalles
+        for detalle_data in data.detalles:
+            producto = db.get(Producto, detalle_data.producto_id)
+            if not producto:
+                raise ValueError(f"Producto {detalle_data.producto_id} no existe")
 
-                # Kardex ENTRADA
-                kardex = KardexMovimiento(
-                    producto_id=producto.id,
-                    tipo_movimiento="ENTRADA",
-                    cantidad=detalle_data.cantidad,
-                    costo_ref=detalle_data.costo_unitario_bs,
-                    origen_id=compra.id,
-                    fecha=datetime.now(timezone.utc),
-                )
-                db.add(kardex)
+            # Crear detalle
+            detalle = DetalleCompra(
+                compra_id=compra.id,
+                producto_id=detalle_data.producto_id,
+                cantidad=detalle_data.cantidad,
+                costo_unitario_bs=detalle_data.costo_unitario_bs,
+            )
+            db.add(detalle)
 
-            # 5. Cuenta por Pagar si es a crédito
-            if data.forma_pago == "CREDITO":
-                fecha_venc = date.today()
-                if data.dias_credito and data.dias_credito > 0:
-                    from datetime import timedelta
-                    fecha_venc = date.today() + timedelta(days=data.dias_credito)
+            # Actualizar stock y costo
+            producto.stock_actual += detalle_data.cantidad
+            # Actualizar costo de referencia (simple: último costo)
+            producto.precio_ref = detalle_data.costo_unitario_bs
 
-                cxp = CuentaPorPagar(
-                    compra_id=compra.id,
-                    proveedor_id=proveedor.id,
-                    monto_total_bs=data.total_bs,
-                    saldo_pendiente_bs=data.total_bs,
-                    fecha_vencimiento=fecha_venc,
-                )
-                db.add(cxp)
+            # Kardex ENTRADA
+            kardex = KardexMovimiento(
+                producto_id=producto.id,
+                tipo_movimiento="ENTRADA",
+                cantidad=detalle_data.cantidad,
+                costo_ref=detalle_data.costo_unitario_bs,
+                origen_id=compra.id,
+                fecha=datetime.now(timezone.utc),
+            )
+            db.add(kardex)
 
-            # Commit automático al salir del bloque with
+        # 5. Cuenta por Pagar si es a crédito
+        if data.forma_pago == "CREDITO":
+            fecha_venc = date.today()
+            if data.dias_credito and data.dias_credito > 0:
+                from datetime import timedelta
+                fecha_venc = date.today() + timedelta(days=data.dias_credito)
+
+            cxp = CuentaPorPagar(
+                compra_id=compra.id,
+                proveedor_id=proveedor.id,
+                monto_total_bs=data.total_bs,
+                saldo_pendiente_bs=data.total_bs,
+                fecha_vencimiento=fecha_venc,
+            )
+            db.add(cxp)
+
+        db.commit()
 
         return JSONResponse(
             status_code=201,
@@ -265,10 +275,14 @@ async def cxp_index(
     usuario=Depends(require_permission("compras", "ver")),
 ):
     """Vista de Cuentas por Pagar."""
+    # Detectar petición HTMX para evitar duplicar el sidebar
+    is_htmx = request.headers.get("HX-Request") == "true"
+    base_template = "partial.html" if is_htmx else "base.html"
+
     return templates.TemplateResponse(
         request=request,
         name="purchases/cxp.html",
-        context={"usuario": usuario},
+        context={"usuario": usuario, "base_template": base_template},
     )
 
 

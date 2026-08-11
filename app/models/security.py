@@ -106,6 +106,9 @@ class Usuario(Base):
     sesiones: Mapped[List["SesionUsuario"]] = relationship(
         back_populates="usuario", cascade="all, delete-orphan"
     )
+    sesiones_caja: Mapped[List["SesionCaja"]] = relationship(
+        back_populates="usuario", cascade="all, delete-orphan"
+    )
     bitacora: Mapped[List["BitacoraAuditoria"]] = relationship(back_populates="usuario")
     facturas: Mapped[List["Factura"]] = relationship(back_populates="usuario")
     compras: Mapped[List["Compra"]] = relationship(back_populates="usuario")

@@ -5,6 +5,9 @@ Rutas:
 - GET  /fiscal/cierre-z           : Vista principal del módulo fiscal y listado de cierres.
 - POST /fiscal/cierre-z/generar   : Genera Cierre Z (transacción atómica).
 - GET  /fiscal/libro-ventas       : Consulta paginada del Libro de Ventas.
+- POST /fiscal/caja/abrir         : Abre sesión de caja para el cajero actual.
+- GET  /fiscal/caja/reporte-x     : Obtiene el Reporte X de la caja activa.
+- POST /fiscal/caja/cerrar        : Genera el cierre de caja (Reporte Z).
 """
 
 from datetime import date, datetime, timezone
@@ -19,10 +22,14 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import require_permission
 from app.db.database import get_db
+from app.models.cash import CierreCaja, SesionCaja
 from app.models.fiscal import CierreZ, RetencionISLR, RetencionIVA
 from app.models.purchases import Compra, DetalleCompra, Proveedor
-from app.models.sales import Cliente, DetalleVenta, Factura, PagoVenta, TasaRef
+from app.models.sales import Cliente, DetalleVenta, Factura, FormaPago, PagoVenta, TasaRef
 from app.schemas.fiscal import (
+    CajaAperturaCreate,
+    CierreCajaCreate,
+    CierreCajaResponse,
     CierreZCreate,
     CierreZResponse,
     CierreZResumen,
@@ -31,10 +38,18 @@ from app.schemas.fiscal import (
     LibroVentasFiltro,
     LibroVentasItem,
     LibroVentasResumen,
+    ReporteXResponse,
     RetencionIVACreate,
     RetencionIVAResponse,
     RetencionISLRCreate,
     RetencionISLRResponse,
+)
+from app.services.fiscal_service import (
+    calculate_reporte_x,
+    close_caja,
+    get_active_caja,
+    get_current_tasa_ref,
+    open_caja,
 )
 
 router = APIRouter()
@@ -44,7 +59,6 @@ templates = Jinja2Templates(directory="app/templates")
 # ============================================================
 # VISTAS
 # ============================================================
-
 @router.get("/fiscal/cierre-z", response_class=HTMLResponse)
 async def cierre_z_index(
     request: Request,
@@ -53,13 +67,21 @@ async def cierre_z_index(
 ):
     """Vista principal del módulo fiscal y listado de cierres pasados."""
     cierres = db.execute(
-        select(CierreZ).order_by(CierreZ.fecha.desc()).limit(20)
+        select(CierreCaja).order_by(CierreCaja.fecha_hora.desc()).limit(20)
     ).scalars().all()
+
+    # Detectar petición HTMX para evitar duplicar el sidebar
+    is_htmx = request.headers.get("HX-Request") == "true"
+    base_template = "partial.html" if is_htmx else "base.html"
 
     return templates.TemplateResponse(
         request=request,
         name="fiscal/cierre_z.html",
-        context={"usuario": usuario, "cierres": cierres},
+        context={
+            "usuario": usuario,
+            "cierres": cierres,
+            "base_template": base_template,
+        },
     )
 
 
@@ -70,10 +92,13 @@ async def libro_ventas_index(
     usuario=Depends(require_permission("fiscal", "ver")),
 ):
     """Vista del Libro de Ventas."""
+    is_htmx = request.headers.get("HX-Request") == "true"
+    base_template = "partial.html" if is_htmx else "base.html"
+
     return templates.TemplateResponse(
         request=request,
         name="fiscal/libro_ventas.html",
-        context={"usuario": usuario},
+        context={"usuario": usuario, "base_template": base_template},
     )
 
 
@@ -84,17 +109,149 @@ async def libro_compras_index(
     usuario=Depends(require_permission("fiscal", "ver")),
 ):
     """Vista del Libro de Compras."""
+    is_htmx = request.headers.get("HX-Request") == "true"
+    base_template = "partial.html" if is_htmx else "base.html"
+
     return templates.TemplateResponse(
         request=request,
         name="fiscal/libro_compras.html",
-        context={"usuario": usuario},
+        context={"usuario": usuario, "base_template": base_template},
     )
+
+
+# ============================================================
+# API - CAJA
+# ============================================================
+@router.post("/fiscal/caja/abrir", response_class=JSONResponse)
+async def abrir_caja(
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("fiscal", "crear")),
+):
+    """Abre una sesión de caja para el cajero actual."""
+    try:
+        payload = await request.json()
+        caja_data = CajaAperturaCreate(**payload)
+    except Exception as exc:
+        return JSONResponse(status_code=400, content={"error": f"Datos inválidos: {exc}"})
+
+    try:
+        tasa = get_current_tasa_ref(db)
+        with db.begin():
+            caja = open_caja(
+                db=db,
+                usuario_id=usuario.id,
+                monto_inicial_bs=caja_data.monto_inicial_bs,
+                monto_inicial_usd=caja_data.monto_inicial_usd,
+                tasa_ref_monto=tasa.monto_bs,
+            )
+        return JSONResponse(
+            status_code=201,
+            content={
+                "ok": True,
+                "caja": {
+                    "id": caja.id,
+                    "usuario_id": caja.usuario_id,
+                    "fecha_apertura": caja.fecha_apertura.isoformat(),
+                    "monto_inicial_bs": float(caja.monto_inicial_bs),
+                    "monto_inicial_usd": float(caja.monto_inicial_usd),
+                    "tasa_ref_monto": float(caja.tasa_ref_monto),
+                    "estado": caja.estado,
+                },
+            },
+        )
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"error": str(exc)})
+
+
+@router.get("/fiscal/caja/reporte-x", response_class=JSONResponse)
+async def reporte_x(
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("fiscal", "ver")),
+):
+    """Consulta los totales acumulados para la sesión de caja abierta."""
+    caja = get_active_caja(db, usuario.id)
+    if not caja:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "No hay sesión de caja abierta para este usuario."},
+        )
+    reporte = calculate_reporte_x(db, caja.id)
+    return JSONResponse(status_code=200, content={"ok": True, "reporte_x": {
+        "total_ventas_bs": float(reporte["total_ventas_bs"]),
+        "total_ventas_usd": float(reporte["total_ventas_usd"]),
+        "total_iva_bs": float(reporte["total_iva_bs"]),
+        "total_igtf_bs": float(reporte["total_igtf_bs"]),
+        "total_efectivo_bs": float(reporte["total_efectivo_bs"]),
+        "total_efectivo_usd": float(reporte["total_efectivo_usd"]),
+        "total_pago_movil": float(reporte["total_pago_movil"]),
+        "total_punto_de_venta": float(reporte["total_punto_de_venta"]),
+        "total_transferencia": float(reporte["total_transferencia"]),
+    }})
+
+
+@router.post("/fiscal/caja/cerrar", response_class=JSONResponse)
+async def cerrar_caja(
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("fiscal", "crear")),
+):
+    """Cierra la sesión de caja activa y genera el Reporte Z."""
+    try:
+        payload = await request.json()
+        cierre_data = CierreCajaCreate(**payload)
+    except Exception as exc:
+        return JSONResponse(status_code=400, content={"error": f"Datos inválidos: {exc}"})
+
+    caja = get_active_caja(db, usuario.id)
+    if not caja:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "No hay sesión de caja abierta para este usuario."},
+        )
+
+    try:
+        with db.begin():
+            cierre = close_caja(
+                db=db,
+                sesion_id=caja.id,
+                efectivo_bs=cierre_data.efectivo_bs,
+                efectivo_usd=cierre_data.efectivo_usd,
+                pago_movil=cierre_data.pago_movil,
+                punto_venta=cierre_data.punto_venta,
+                transferencia=cierre_data.transferencia,
+            )
+        return JSONResponse(
+            status_code=200,
+            content={
+                "ok": True,
+                "cierre_id": cierre.id,
+                "numero_reporte_z": cierre.numero_reporte_z,
+                "fecha_hora": cierre.fecha_hora.isoformat(),
+                "total_ventas_bs": float(cierre.total_ventas_bs),
+                "total_ventas_usd": float(cierre.total_ventas_usd),
+                "total_iva_bs": float(cierre.total_iva_bs),
+                "total_igtf_bs": float(cierre.total_igtf_bs),
+                "total_efectivo_bs": float(cierre.total_efectivo_bs),
+                "total_efectivo_usd": float(cierre.total_efectivo_usd),
+                "total_pago_movil": float(cierre.total_pago_movil),
+                "total_punto_de_venta": float(cierre.total_punto_de_venta),
+                "total_transferencia": float(cierre.total_transferencia),
+                "diferencia_sobrante_faltante": float(
+                    cierre.diferencia_sobrante_faltante
+                ),
+                "factura_inicio": cierre.factura_inicio,
+                "factura_fin": cierre.factura_fin,
+                "cantidad_operaciones": cierre.cantidad_operaciones,
+            },
+        )
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"error": str(exc)})
 
 
 # ============================================================
 # API - GENERAR CIERRE Z
 # ============================================================
-
 @router.post("/fiscal/cierre-z/generar", response_class=JSONResponse)
 async def generar_cierre_z(
     db: Session = Depends(get_db),
@@ -107,18 +264,13 @@ async def generar_cierre_z(
     (o desde el inicio del día) y calcula totales fiscales.
     """
     with db.begin():
-        # 1. Determinar rango de fechas
-        ultimo_cierre = db.scalar(
-            select(CierreZ).order_by(CierreZ.fecha.desc()).limit(1)
-        )
-
+        ultimo_cierre = db.scalar(select(CierreZ).order_by(CierreZ.fecha.desc()).limit(1))
         ahora = datetime.now(timezone.utc)
         if ultimo_cierre:
             fecha_desde = ultimo_cierre.fecha
         else:
             fecha_desde = datetime(ahora.year, ahora.month, ahora.day, tzinfo=timezone.utc)
 
-        # 2. Consultar facturas del rango
         stmt = (
             select(Factura)
             .where(
@@ -138,7 +290,6 @@ async def generar_cierre_z(
                 content={"error": "No hay facturas emitidas en el rango seleccionado."},
             )
 
-        # 3. Calcular totales
         total_ventas_bs = Decimal("0.00")
         total_iva_bs = Decimal("0.00")
         total_igtf_bs = Decimal("0.00")
@@ -148,7 +299,6 @@ async def generar_cierre_z(
             total_iva_bs += factura.iva_bs
             total_igtf_bs += factura.igtf_bs
 
-        # 4. Crear Cierre Z
         cierre = CierreZ(
             usuario_id=usuario.id,
             fecha=ahora,
@@ -161,9 +311,6 @@ async def generar_cierre_z(
         )
         db.add(cierre)
         db.flush()
-
-        # 5. Marcar facturas como procesadas (opcional: agregar campo cierre_z_id)
-        # Por ahora solo registramos el cierre
 
     return JSONResponse(
         status_code=200,
@@ -184,7 +331,6 @@ async def generar_cierre_z(
 # ============================================================
 # API - LIBRO DE VENTAS
 # ============================================================
-
 @router.get("/fiscal/libro-ventas/data", response_class=JSONResponse)
 async def libro_ventas_data(
     db: Session = Depends(get_db),
@@ -199,7 +345,6 @@ async def libro_ventas_data(
 
     Retorna estructura conforme a normativa SENIAT.
     """
-    # Construir filtros
     filtros = [Factura.estado == "EMITIDA"]
 
     if mes and anio:
@@ -217,7 +362,6 @@ async def libro_ventas_data(
             )
         )
 
-    # Consulta principal
     stmt = (
         select(
             Factura,
@@ -243,18 +387,22 @@ async def libro_ventas_data(
 
     for factura, cliente, base_imponible, total_con_iva in resultados:
         iva = total_con_iva - base_imponible if total_con_iva and base_imponible else Decimal("0.00")
-        
+
         items.append(
             LibroVentasItem(
                 rif=cliente.cedula_rif,
                 razon_social=cliente.razon_social,
                 numero_factura=factura.numero_factura,
-                numero_control=factura.numero_factura,  # Usar numero_factura como control
+                numero_control=factura.numero_factura,
                 fecha_emision=factura.fecha_emision.date(),
-                base_imponible=base_imponible.quantize(Decimal("0.00")) if base_imponible else Decimal("0.00"),
-                porcentaje_iva=Decimal("16.00"),  # Simplificado
+                base_imponible=base_imponible.quantize(Decimal("0.00"))
+                if base_imponible
+                else Decimal("0.00"),
+                porcentaje_iva=Decimal("16.00"),
                 monto_iva=iva.quantize(Decimal("0.00")),
-                total_con_iva=total_con_iva.quantize(Decimal("0.00")) if total_con_iva else Decimal("0.00"),
+                total_con_iva=total_con_iva.quantize(Decimal("0.00"))
+                if total_con_iva
+                else Decimal("0.00"),
             )
         )
 
@@ -278,7 +426,6 @@ async def libro_ventas_data(
 # ============================================================
 # LIBRO DE COMPRAS
 # ============================================================
-
 @router.get("/fiscal/libro-compras/data", response_class=JSONResponse)
 async def libro_compras_data(
     db: Session = Depends(get_db),
@@ -335,7 +482,7 @@ async def libro_compras_data(
     for compra, proveedor, detalle, ret_num, iva_ret in resultados:
         base = detalle.costo_unitario_bs * detalle.cantidad
         iva = base * Decimal("0.16")
-        
+
         items.append(
             LibroComprasItem(
                 fecha_compra=compra.fecha_compra.date(),
@@ -374,7 +521,6 @@ async def libro_compras_data(
 # ============================================================
 # RETENCIONES
 # ============================================================
-
 @router.post("/compras/{compra_id}/generar-retencion-iva", response_class=JSONResponse)
 async def generar_retencion_iva(
     compra_id: int,
@@ -387,7 +533,6 @@ async def generar_retencion_iva(
     if not compra:
         return JSONResponse(status_code=404, content={"error": "Compra no encontrada"})
 
-    # Validar que no tenga retención previa
     existe = db.scalar(select(RetencionIVA).where(RetencionIVA.compra_id == compra_id))
     if existe:
         return JSONResponse(
@@ -395,7 +540,6 @@ async def generar_retencion_iva(
             content={"error": "Ya existe una retención de IVA para esta compra"},
         )
 
-    # Generar número de comprobante
     año = datetime.now().year
     mes = datetime.now().month
     ultimo = db.scalar(
@@ -504,6 +648,9 @@ async def ver_comprobante_retencion(
     compra = db.get(Compra, retencion.compra_id)
     proveedor = db.get(Proveedor, compra.proveedor_id)
 
+    is_htmx = request.headers.get("HX-Request") == "true"
+    base_template = "partial.html" if is_htmx else "base.html"
+
     return templates.TemplateResponse(
         request=request,
         name="purchases/comprobante_retencion.html",
@@ -513,5 +660,6 @@ async def ver_comprobante_retencion(
             "tipo": tipo,
             "compra": compra,
             "proveedor": proveedor,
+            "base_template": base_template,
         },
     )

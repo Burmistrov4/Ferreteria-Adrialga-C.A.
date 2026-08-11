@@ -12,7 +12,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 # ============================================================
@@ -42,8 +42,7 @@ class ProveedorResponse(ProveedorBase):
     """Schema de respuesta para Proveedor."""
     id: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============================================================
@@ -68,8 +67,7 @@ class DetalleCompraResponse(DetalleCompraBase):
     compra_id: int
     subtotal_bs: Decimal
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CompraBase(BaseModel):
@@ -96,8 +94,7 @@ class CompraResponse(CompraBase):
     fecha_compra: datetime
     estado: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============================================================
@@ -124,8 +121,7 @@ class CuentaPorPagarResponse(CuentaPorPagarBase):
     estado: str
     fecha_creacion: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CuentaPorPagarResumen(BaseModel):

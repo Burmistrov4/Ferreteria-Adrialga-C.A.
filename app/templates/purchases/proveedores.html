@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends base_template | default('base.html') %}
 
 {% block title %}Proveedores - Compras{% endblock %}
 {% block page_title %}Gestión de Proveedores{% endblock %}
@@ -18,11 +18,21 @@
                 <form id="formProveedor">
                     <div class="mb-2">
                         <label class="form-label small">RIF</label>
-                        <input type="text" id="rif" class="form-control form-control-sm" placeholder="Ej: J-12345678" required maxlength="12">
+                        <div class="input-group input-group-sm">
+                            <input type="text" id="rif" class="form-control" placeholder="Ej: J-12345678" required maxlength="12" title="RIF o cédula">
+                            <button class="btn btn-outline-primary" type="button" id="btnConsultarSeniat" title="Consultar SENIAT">
+                                <i class="bi bi-search"></i>
+                            </button>
+                        </div>
+                        <div id="seniatFeedback" class="small mt-1"></div>
                     </div>
                     <div class="mb-2">
                         <label class="form-label small">Razón Social</label>
                         <input type="text" id="razonSocial" class="form-control form-control-sm" placeholder="Nombre del proveedor" required maxlength="150">
+                    </div>
+                    <div class="mb-2" id="retencionIvaRow" style="display: none;">
+                        <label class="form-label small">Retención de IVA</label>
+                        <input type="text" id="retencionIva" class="form-control form-control-sm" readonly>
                     </div>
                     <div class="mb-2">
                         <label class="form-label small">Dirección</label>
@@ -82,6 +92,46 @@
 </div>
 
 <script>
+// Consultar RIF en SENIAT
+document.getElementById('btnConsultarSeniat').addEventListener('click', async function() {
+    const rif = document.getElementById('rif').value;
+    if (!rif) {
+        document.getElementById('seniatFeedback').innerHTML = '<span class="text-muted">Ingrese un RIF o cédula</span>';
+        return;
+    }
+
+    const feedback = document.getElementById('seniatFeedback');
+    feedback.innerHTML = '<span class="text-primary"><i class="bi bi-hourglass-split me-1"></i>Consultando SENIAT...</span>';
+
+    try {
+        const resp = await fetch(`/api/seniat/consultar/${encodeURIComponent(rif)}`);
+        const data = await resp.json();
+
+        if (data.success) {
+            document.getElementById('razonSocial').value = data.nombre || '';
+            document.getElementById('seniatFeedback').innerHTML = '<span class="text-success"><i class="bi bi-check-circle me-1"></i>Datos obtenidos del SENIAT</span>';
+
+            if (data.es_contribuyente_especial) {
+                document.getElementById('retencionIvaRow').style.display = 'block';
+                document.getElementById('retencionIva').value = `Contribuyente Especial - Retención ${data.porcentaje_retencion}%`;
+            } else {
+                document.getElementById('retencionIvaRow').style.display = 'none';
+            }
+        } else {
+            document.getElementById('seniatFeedback').innerHTML = '<span class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>No se pudo consultar el SENIAT. Puede editar manualmente.</span>';
+        }
+    } catch (err) {
+        document.getElementById('seniatFeedback').innerHTML = '<span class="text-danger"><i class="bi bi-x-circle me-1"></i>Error de conexión. Complete manualmente.</span>';
+    }
+});
+
+// Consultar RIF al perder el foco (blur)
+document.getElementById('rif').addEventListener('blur', function() {
+    if (this.value.trim()) {
+        document.getElementById('btnConsultarSeniat').click();
+    }
+});
+
 document.getElementById('formProveedor').addEventListener('submit', async function(e) {
     e.preventDefault();
 

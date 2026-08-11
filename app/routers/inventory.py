@@ -17,7 +17,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, Request, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -46,8 +46,7 @@ class CategoriaRapida(BaseModel):
     id: int
     nombre: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============================================================
@@ -60,10 +59,23 @@ async def inventario_index(
     usuario=Depends(require_permission("inventario", "lectura")),
 ):
     """Vista principal del módulo de inventario."""
+    # Detectar petición HTMX para evitar duplicar el sidebar
+    is_htmx = request.headers.get("HX-Request") == "true"
+    base_template = "partial.html" if is_htmx else "base.html"
+
     return templates.TemplateResponse(
         request=request,
         name="inventory/index.html",
-        context={"usuario": usuario},
+        context={
+            "usuario": usuario,
+            "base_template": base_template,
+            "productos": [],
+            "total_pages": 1,
+            "page": 1,
+            "total": 0,
+            "q": "",
+            "categoria_id": 0,
+        },
     )
 
 

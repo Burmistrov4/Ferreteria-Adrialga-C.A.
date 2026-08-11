@@ -14,7 +14,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 # ============================================================
@@ -45,8 +45,7 @@ class ClienteResponse(ClienteBase):
     """Schema de respuesta para cliente."""
     id: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============================================================
@@ -64,8 +63,7 @@ class TasaRefResponse(TasaRefBase):
     id: int
     fecha: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============================================================
@@ -88,8 +86,7 @@ class FacturaResponse(BaseModel):
     estado: str
     fecha_emision: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============================================================
@@ -106,8 +103,7 @@ class DetalleVentaResponse(BaseModel):
     alicuota_porcentaje: Decimal
     total_linea_bs: Decimal
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============================================================
@@ -125,8 +121,7 @@ class PagoVentaResponse(BaseModel):
     monto_bs: Decimal
     referencia: Optional[str]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============================================================

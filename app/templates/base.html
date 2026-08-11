@@ -41,8 +41,9 @@
             <li class="nav-item">
                 <a class="nav-link active"
                    hx-get="/"
-                   hx-target="#main-content"
+                   hx-target="#content"
                    hx-swap="innerHTML"
+                   hx-push-url="true"
                    href="/">
                     <i class="bi bi-speedometer2 me-2"></i> Dashboard
                 </a>
@@ -52,9 +53,13 @@
             {% if usuario.es_superuser or usuario.rol.nombre in ['Administrador', 'Cajero'] %}
             <li class="sidebar-section">VENTAS & POS</li>
             <li class="nav-item">
-                <a class="nav-link" href="#"
-                   data-bs-toggle="tooltip" title="Próximamente en Fase 5">
-                    <i class="bi bi-cart3 me-2"></i> POS Touch <span class="badge bg-warning text-dark ms-1">Fase 5</span>
+                <a class="nav-link"
+                   hx-get="/pos"
+                   hx-target="#content"
+                   hx-swap="innerHTML"
+                   hx-push-url="true"
+                   href="/pos">
+                    <i class="bi bi-cart3 me-2"></i> POS Touch
                 </a>
             </li>
             <li class="nav-item">
@@ -68,17 +73,32 @@
             {% if usuario.es_superuser or usuario.rol.nombre in ['Administrador', 'Inventariante'] %}
             <li class="sidebar-section">INVENTARIO</li>
             <li class="nav-item">
-                <a class="nav-link" href="#">
+                <a class="nav-link"
+                   hx-get="/inventario/"
+                   hx-target="#content"
+                   hx-swap="innerHTML"
+                   hx-push-url="true"
+                   href="/inventario/">
                     <i class="bi bi-box-seam me-2"></i> Catálogo de Productos
                 </a>
             </li>
             <li class="nav-item">
-                <a class="nav-link" href="#">
+                <a class="nav-link"
+                   hx-get="/inventario/"
+                   hx-target="#content"
+                   hx-swap="innerHTML"
+                   hx-push-url="true"
+                   href="/inventario/">
                     <i class="bi bi-box-arrow-in-down me-2"></i> Entrada de Inventario
                 </a>
             </li>
             <li class="nav-item">
-                <a class="nav-link" href="#">
+                <a class="nav-link"
+                   hx-get="/inventario/"
+                   hx-target="#content"
+                   hx-swap="innerHTML"
+                   hx-push-url="true"
+                   href="/inventario/">
                     <i class="bi bi-list-check me-2"></i> Kárdex / Movimientos
                 </a>
             </li>
@@ -88,12 +108,22 @@
             {% if usuario.es_superuser or usuario.rol.nombre in ['Administrador', 'Inventariante'] %}
             <li class="sidebar-section">COMPRAS</li>
             <li class="nav-item">
-                <a class="nav-link" href="#">
+                <a class="nav-link"
+                   hx-get="/compras"
+                   hx-target="#content"
+                   hx-swap="innerHTML"
+                   hx-push-url="true"
+                   href="/compras">
                     <i class="bi bi-bag-check me-2"></i> Orden de Compra
                 </a>
             </li>
             <li class="nav-item">
-                <a class="nav-link" href="#">
+                <a class="nav-link"
+                   hx-get="/compras/proveedores"
+                   hx-target="#content"
+                   hx-swap="innerHTML"
+                   hx-push-url="true"
+                   href="/compras/proveedores">
                     <i class="bi bi-truck me-2"></i> Proveedores
                 </a>
             </li>
@@ -103,12 +133,22 @@
             {% if usuario.es_superuser or usuario.rol.nombre in ['Administrador', 'Cajero'] %}
             <li class="sidebar-section">CUENTAS</li>
             <li class="nav-item">
-                <a class="nav-link" href="#">
+                <a class="nav-link"
+                   hx-get="/pos"
+                   hx-target="#content"
+                   hx-swap="innerHTML"
+                   hx-push-url="true"
+                   href="/pos">
                     <i class="bi bi-cash-coin me-2"></i> Cuentas por Cobrar
                 </a>
             </li>
             <li class="nav-item">
-                <a class="nav-link" href="#">
+                <a class="nav-link"
+                   hx-get="/compras/cxp"
+                   hx-target="#content"
+                   hx-swap="innerHTML"
+                   hx-push-url="true"
+                   href="/compras/cxp">
                     <i class="bi bi-wallet2 me-2"></i> Cuentas por Pagar
                 </a>
             </li>
@@ -118,13 +158,33 @@
             {% if usuario.es_superuser or usuario.rol.nombre in ['Administrador', 'Contador'] %}
             <li class="sidebar-section">FISCAL SENIAT</li>
             <li class="nav-item">
-                <a class="nav-link" href="#">
+                <a class="nav-link"
+                   hx-get="/fiscal/cierre-z"
+                   hx-target="#content"
+                   hx-swap="innerHTML"
+                   hx-push-url="true"
+                   href="/fiscal/cierre-z">
                     <i class="bi bi-receipt me-2"></i> Cuadre de Caja / Reporte Z
                 </a>
             </li>
             <li class="nav-item">
-                <a class="nav-link" href="#">
-                    <i class="bi bi-file-earmark-text me-2"></i> Resumen Declaración IVA
+                <a class="nav-link"
+                   hx-get="/fiscal/libro-ventas"
+                   hx-target="#content"
+                   hx-swap="innerHTML"
+                   hx-push-url="true"
+                   href="/fiscal/libro-ventas">
+                    <i class="bi bi-file-earmark-text me-2"></i> Libro de Ventas
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link"
+                   hx-get="/fiscal/libro-compras"
+                   hx-target="#content"
+                   hx-swap="innerHTML"
+                   hx-push-url="true"
+                   href="/fiscal/libro-compras">
+                    <i class="bi bi-journal-text me-2"></i> Libro de Compras
                 </a>
             </li>
             {% endif %}
@@ -165,7 +225,7 @@
             <div class="d-flex align-items-center gap-3">
                 <div class="tasa-chip badge bg-primary-subtle text-primary-emphasis rounded-pill px-3 py-2">
                     <i class="bi bi-currency-exchange me-1"></i>
-                    Tasa BCV: <strong>{{ "%.4f" | format(tasa_ref.monto_bs) }}</strong> Bs/REF
+                    Tasa BCV: <strong>{% if tasa_ref and tasa_ref.monto_bs %}{{ "%.4f" | format(tasa_ref.monto_bs) }}{% else %}1.0000{% endif %}</strong> Bs/REF
                 </div>
                 <div class="text-end d-none d-sm-block">
                     <div class="fw-semibold small">{{ usuario.nombre_completo }}</div>
@@ -178,7 +238,7 @@
         </header>
 
         <!-- Main Content (HTMX target) -->
-        <main class="flex-grow-1 p-3 p-md-4" id="main-content">
+        <main class="flex-grow-1 p-3 p-md-4" id="content">
             {% block content %}{% endblock %}
         </main>
 

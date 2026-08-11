@@ -40,6 +40,8 @@ def init_db() -> None:
         Proveedor,
         Role,
         RolPermiso,
+        SesionCaja,
+        CierreCaja,
         SesionUsuario,
         TasaRef,
         Usuario,

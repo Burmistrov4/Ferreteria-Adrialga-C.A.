@@ -32,6 +32,7 @@ from app.models.sales import (
     TasaRef,
 )
 from app.schemas.sales import VentaCreate, VentaItemCreate, VentaPagoCreate
+from app.services.fiscal_service import get_active_caja
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -52,10 +53,14 @@ async def pos_index(
         select(TasaRef).order_by(TasaRef.fecha.desc()).limit(1)
     )
 
+    # Detectar petición HTMX para evitar duplicar el sidebar
+    is_htmx = request.headers.get("HX-Request") == "true"
+    base_template = "partial.html" if is_htmx else "base.html"
+
     return templates.TemplateResponse(
         request=request,
         name="sales/pos.html",
-        context={"usuario": usuario, "tasa": tasa},
+        context={"usuario": usuario, "tasa": tasa, "base_template": base_template},
     )
 
 
@@ -170,13 +175,20 @@ async def procesar_venta(
     except Exception as e:
         return JSONResponse(status_code=400, content={"error": f"Datos inválidos: {e}"})
 
-    # Obtener tasa del día
-    tasa_ref = db.scalar(select(TasaRef).order_by(TasaRef.fecha.desc()).limit(1))
-    if not tasa_ref:
-        return JSONResponse(status_code=400, content={"error": "No hay tasa de cambio registrada."})
-
     # Iniciar transacción atómica
     with db.begin():
+        # Obtener tasa del día
+        tasa_ref = db.scalar(select(TasaRef).order_by(TasaRef.fecha.desc()).limit(1))
+        if not tasa_ref:
+            return JSONResponse(status_code=400, content={"error": "No hay tasa de cambio registrada."})
+
+        sesion_caja = get_active_caja(db, usuario.id)
+        if not sesion_caja:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "No hay sesión de caja abierta para este usuario."},
+            )
+
         # 1. Validar stock y preparar cálculos
         productos_validados = []
         subtotal_bs = Decimal("0.00")
@@ -243,7 +255,8 @@ async def procesar_venta(
             correlativo=correlativo.ultimo_numero,
             cliente_id=venta.cliente_id or 1,  # Cliente contado por defecto
             usuario_id=usuario.id,
-            tasa_ref_monto=tasa_ref.monto_bs,
+            tasa_ref_id=tasa_ref.id,
+            sesion_caja_id=sesion_caja.id,
             subtotal_bs=subtotal_bs,
             iva_bs=iva_bs,
             igtf_bs=Decimal("0.00"),

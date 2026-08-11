@@ -11,7 +11,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ============================================================
@@ -32,6 +32,72 @@ class CierreZCreate(CierreZBase):
     pass
 
 
+class CajaAperturaCreate(BaseModel):
+    """Schema para apertura de caja."""
+    monto_inicial_bs: Decimal = Field(ge=0, description="Monto inicial en Bs")
+    monto_inicial_usd: Decimal = Field(ge=0, description="Monto inicial en USD")
+
+
+class CajaAperturaResponse(BaseModel):
+    """Schema de respuesta de sesión de caja abierta."""
+    id: int
+    usuario_id: int
+    fecha_apertura: datetime
+    monto_inicial_bs: Decimal
+    monto_inicial_usd: Decimal
+    tasa_ref_monto: Decimal
+    estado: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ReporteXResponse(BaseModel):
+    """Resumen del Reporte X para la sesión activa."""
+    total_ventas_bs: Decimal
+    total_ventas_usd: Decimal
+    total_iva_bs: Decimal
+    total_igtf_bs: Decimal
+    total_efectivo_bs: Decimal
+    total_efectivo_usd: Decimal
+    total_pago_movil: Decimal
+    total_punto_de_venta: Decimal
+    total_transferencia: Decimal
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CierreCajaCreate(BaseModel):
+    """Schema para generar el Cierre de Caja (Reporte Z)."""
+    efectivo_bs: Decimal = Field(ge=0, description="Efectivo contado en Bs")
+    efectivo_usd: Decimal = Field(ge=0, description="Efectivo contado en USD")
+    pago_movil: Decimal = Field(ge=0, description="Total pagos móviles en Bs")
+    punto_venta: Decimal = Field(ge=0, description="Total punto de venta en Bs")
+    transferencia: Decimal = Field(ge=0, description="Total transferencias en Bs")
+
+
+class CierreCajaResponse(BaseModel):
+    """Schema de respuesta para cierre de caja."""
+    id: int
+    sesion_caja_id: int
+    numero_reporte_z: int
+    fecha_hora: datetime
+    total_ventas_bs: Decimal
+    total_ventas_usd: Decimal
+    total_iva_bs: Decimal
+    total_igtf_bs: Decimal
+    total_efectivo_bs: Decimal
+    total_efectivo_usd: Decimal
+    total_pago_movil: Decimal
+    total_punto_de_venta: Decimal
+    total_transferencia: Decimal
+    diferencia_sobrante_faltante: Decimal
+    factura_inicio: str
+    factura_fin: str
+    cantidad_operaciones: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class CierreZResponse(CierreZBase):
     """Schema de respuesta para Cierre Z."""
     id: int
@@ -39,8 +105,7 @@ class CierreZResponse(CierreZBase):
     fecha: datetime
     cantidad_operaciones: Optional[int] = Field(default=None, description="Conteo de facturas")
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CierreZResumen(BaseModel):
@@ -79,8 +144,7 @@ class DeclaracionIVAResponse(DeclaracionIVABase):
     saldo_favor: Optional[Decimal] = Field(default=None, description="Saldo a favor del contribuyente")
     fecha_presentacion: Optional[datetime] = Field(default=None, description="Fecha de presentación")
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class DeclaracionIVADetalle(BaseModel):
@@ -91,8 +155,7 @@ class DeclaracionIVADetalle(BaseModel):
     base_imponible: Decimal = Field(ge=0)
     monto_iva: Decimal = Field(ge=0)
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============================================================
@@ -120,8 +183,7 @@ class LibroVentasItem(BaseModel):
     monto_iva: Decimal = Field(ge=0)
     total_con_iva: Decimal = Field(ge=0)
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class LibroVentasResumen(BaseModel):
@@ -157,8 +219,7 @@ class RetencionIVAResponse(BaseModel):
     porcentaje_retencion: int
     monto_retenido: Decimal
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RetencionISLRCreate(BaseModel):
@@ -183,8 +244,7 @@ class RetencionISLRResponse(BaseModel):
     sustraendo: Decimal
     monto_retenido: Decimal
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============================================================
@@ -205,8 +265,7 @@ class LibroComprasItem(BaseModel):
     iva_retenido: Decimal
     numero_comprobante_retencion: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class LibroComprasResumen(BaseModel):

@@ -35,6 +35,7 @@ from app.models import (
     TasaRef,
     Usuario,
 )
+from app.services.bcv_scraper import obtener_tasa_bcv
 from app.schemas.dashboard import (
     AlertaStock,
     BitacoraFiltro,
@@ -70,7 +71,7 @@ def dashboard(
     """
     # Métricas
     kpis = _obtener_kpis(db)
-    
+
     # Productos bajo stock
     productos_bajo_stock = db.scalars(
         select(Producto).where(
@@ -78,12 +79,25 @@ def dashboard(
             Producto.stock_actual <= Producto.stock_minimo,
         )
     ).all()
-    
+
     # Último cierre Z
     ultimo_cierre = db.scalar(select(CierreZ).order_by(CierreZ.fecha.desc()).limit(1))
-    
+
     # Datos para gráficos (últimos 30 días)
     datos_grafico = _datos_grafico_ventas(db)
+
+    # Intentar actualizar la tasa desde el BCV (si es nueva)
+    _actualizar_tasa_bcv(db)
+
+    # Tasa REF con fallback seguro (4 decimales) para inyección en plantilla
+    tasa_ref = db.scalar(select(TasaRef).order_by(TasaRef.fecha.desc()).limit(1))
+    if not (tasa_ref and tasa_ref.monto_bs and tasa_ref.monto_bs > 0):
+        # Fallback seguro con precisión a 4 decimales (valor neutro = 1.0000)
+        tasa_ref = TasaRef(monto_bs=Decimal("1.0000"))
+
+    # Detectar petición HTMX para evitar duplicar el sidebar
+    is_htmx = request.headers.get("HX-Request") == "true"
+    base_template = "partial.html" if is_htmx else "base.html"
 
     return templates.TemplateResponse(
         request=request,
@@ -94,8 +108,39 @@ def dashboard(
             "productos_bajo_stock": productos_bajo_stock,
             "ultimo_cierre": ultimo_cierre,
             "datos_grafico": datos_grafico,
+            "tasa_ref": tasa_ref,
+            "base_template": base_template,
         },
     )
+
+
+def _actualizar_tasa_bcv(db: Session) -> None:
+    """
+    Consulta la tasa del BCV y la guarda en BD si es más reciente que la actual.
+
+    Si el scraper falla, mantiene la tasa existente (o el fallback 1.0000).
+    """
+    try:
+        tasa_bcv = obtener_tasa_bcv()
+        if not tasa_bcv:
+            return
+
+        # Obtener la tasa más reciente en BD
+        tasa_actual = db.scalar(select(TasaRef).order_by(TasaRef.fecha.desc()).limit(1))
+
+        # Guardar solo si la nueva tasa es más reciente o no existe ninguna
+        if not tasa_actual or tasa_bcv.fecha > tasa_actual.fecha:
+            db.add(
+                TasaRef(
+                    fecha=tasa_bcv.fecha,
+                    monto_bs=tasa_bcv.monto_bs,
+                    origen=tasa_bcv.origen,
+                )
+            )
+            db.commit()
+    except Exception:
+        # Si falla el scraper, no interrumpir el dashboard
+        db.rollback()
 
 
 def _obtener_kpis(db: Session) -> DashboardKPIs:
@@ -160,11 +205,19 @@ def _obtener_kpis(db: Session) -> DashboardKPIs:
         for p in alertas
     ]
     
+    # Tasa REF con fallback seguro (precisión 4 decimales)
+    tasa = db.scalar(select(TasaRef).order_by(TasaRef.fecha.desc()).limit(1))
+    tasa_val = tasa.monto_bs if (tasa and tasa.monto_bs and tasa.monto_bs > 0) else Decimal("1.0000")
+
+    # Cálculos de KPIs en USD con protección contra división por cero
+    ventas_hoy_usd = (ventas_hoy / tasa_val) if tasa_val > 0 else Decimal("0.00")
+    ventas_mes_usd = (ventas_mes / tasa_val) if tasa_val > 0 else Decimal("0.00")
+
     return DashboardKPIs(
         ventas_hoy_bs=ventas_hoy,
-        ventas_hoy_usd=ventas_hoy / Decimal("1.00"),  # Simplificado
+        ventas_hoy_usd=ventas_hoy_usd,
         ventas_mes_bs=ventas_mes,
-        ventas_mes_usd=ventas_mes / Decimal("1.00"),
+        ventas_mes_usd=ventas_mes_usd,
         total_cxc_pendiente=total_cxc,
         total_cxp_pendiente=total_cxp,
         productos_bajo_stock=productos_bajo,
@@ -240,10 +293,14 @@ async def auditoria_index(
     usuario: Usuario = Depends(require_permission("auditoria", "ver")),
 ):
     """Vista de bitácora de auditoría."""
+    # Detectar petición HTMX para evitar duplicar el sidebar
+    is_htmx = request.headers.get("HX-Request") == "true"
+    base_template = "partial.html" if is_htmx else "base.html"
+
     return templates.TemplateResponse(
         request=request,
         name="dashboard/bitacora.html",
-        context={"usuario": usuario},
+        context={"usuario": usuario, "base_template": base_template},
     )
 
 
@@ -318,7 +375,7 @@ async def reporte_mas_vendidos(
 ):
     """Top productos más vendidos por cantidad e ingresos."""
     tasa = db.scalar(select(TasaRef).order_by(TasaRef.fecha.desc()).limit(1))
-    tasa_val = tasa.monto_bs if tasa else Decimal("1.00")
+    tasa_val = tasa.monto_bs if (tasa and tasa.monto_bs and tasa.monto_bs > 0) else Decimal("1.0000")
 
     stmt = (
         select(
@@ -336,7 +393,8 @@ async def reporte_mas_vendidos(
 
     items = []
     for prod, cant, ingresos_bs in resultados:
-        ingresos_usd = ingresos_bs / tasa_val if ingresos_bs else Decimal("0.00")
+        ingresos_bs_val = Decimal(ingresos_bs) if ingresos_bs else Decimal("0.00")
+        ingresos_usd = (ingresos_bs_val / tasa_val) if (ingresos_bs_val and tasa_val > 0) else Decimal("0.0000")
         items.append({
             "producto": prod.descripcion,
             "categoria": prod.categoria.nombre if prod.categoria else "General",
@@ -355,15 +413,17 @@ async def reporte_rentabilidad(
 ):
     """Reporte de rentabilidad por producto."""
     tasa = db.scalar(select(TasaRef).order_by(TasaRef.fecha.desc()).limit(1))
-    tasa_val = tasa.monto_bs if tasa else Decimal("1.00")
+    tasa_val = tasa.monto_bs if (tasa and tasa.monto_bs and tasa.monto_bs > 0) else Decimal("1.0000")
 
     stmt = select(Producto)
     productos = db.execute(stmt).scalars().all()
 
     items = []
     for p in productos:
+        # Precio de referencia seguro (evita None multiplicando por tasa)
+        precio_ref = p.precio_ref or Decimal("0.00")
         # Precio de venta en Bs
-        precio_venta_bs = p.precio_ref * tasa_val
+        precio_venta_bs = precio_ref * tasa_val
         
         # Obtener último costo de compra en Bs si existe
         ultimo_costo = db.scalar(
@@ -377,7 +437,7 @@ async def reporte_rentabilidad(
         costo_bs = ultimo_costo if ultimo_costo is not None else (precio_venta_bs * Decimal("0.70"))
         
         margen_bs = precio_venta_bs - costo_bs
-        margen_porcentaje = (margen_bs / precio_venta_bs * 100) if precio_venta_bs > 0 else Decimal("0.00")
+        margen_porcentaje = (margen_bs / precio_venta_bs * 100) if precio_venta_bs > 0 else Decimal("0.0000")
 
         items.append({
             "producto": p.descripcion,
@@ -399,7 +459,7 @@ async def reporte_ventas_periodo(
 ):
     """Ventas agrupadas por fecha, categoría y método de pago."""
     tasa = db.scalar(select(TasaRef).order_by(TasaRef.fecha.desc()).limit(1))
-    tasa_val = tasa.monto_bs if tasa else Decimal("1.00")
+    tasa_val = tasa.monto_bs if (tasa and tasa.monto_bs and tasa.monto_bs > 0) else Decimal("1.0000")
 
     stmt = (
         select(
@@ -431,7 +491,8 @@ async def reporte_ventas_periodo(
 
     items = []
     for fecha, cat, pago, cant, total_bs in resultados:
-        total_usd = total_bs / tasa_val if total_bs else Decimal("0.00")
+        total_bs_val = Decimal(total_bs) if total_bs else Decimal("0.00")
+        total_usd = (total_bs_val / tasa_val) if (total_bs_val and tasa_val > 0) else Decimal("0.0000")
         items.append({
             "fecha": fecha.strftime("%Y-%m-%d") if isinstance(fecha, (date, datetime)) else str(fecha),
             "categoria": cat,

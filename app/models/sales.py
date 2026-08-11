@@ -104,6 +104,9 @@ class Factura(Base):
     tasa_ref_id: Mapped[int] = mapped_column(
         ForeignKey("tasas_ref.id"), nullable=False
     )
+    sesion_caja_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("sesiones_caja.id"), nullable=True
+    )
     subtotal_bs: Mapped[Decimal] = mapped_column(
         Numeric(12, 2), default=Decimal("0.00")
     )
@@ -129,6 +132,7 @@ class Factura(Base):
     cuentas_por_cobrar: Mapped[List["CuentaPorCobrar"]] = relationship(
         back_populates="factura"
     )
+    sesion_caja: Mapped[Optional["SesionCaja"]] = relationship(back_populates="facturas")
     detalle_declaraciones: Mapped[List["DetalleDeclaracionIVA"]] = relationship(
         back_populates="factura"
     )

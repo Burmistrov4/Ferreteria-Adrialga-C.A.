@@ -1,16 +1,11 @@
 """
-Router de Autenticación — Login/Logout con cookies HTTPOnly.
-
-Rutas:
-- GET  /login  : Renderiza el formulario de login.
-- POST /login  : Valida credenciales, registra sesión, establece cookie.
-- GET  /logout : Inactiva sesión y elimina cookie.
+Rutas de Autenticación — Ferretería Adrialga, C.A. ERP / POS.
+Maneja el inicio de sesión, cierre de sesión y validación de tokens JWT con soporte HTMX.
 """
 
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Form, Request, Response, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
@@ -31,16 +26,8 @@ templates = Jinja2Templates(directory="app/templates")
 
 
 @router.get("/login", response_class=HTMLResponse, name="login")
-def login_page(
-    request: Request,
-    db: Session = Depends(get_db),
-):
-    """
-    Muestra el formulario de inicio de sesión.
-
-    Si el usuario ya tiene una sesión válida en cookie, redirige al dashboard.
-    Verifica la sesión manualmente (sin lanzar 401) para evitar bucles de redirect.
-    """
+def login_page(request: Request, db: Session = Depends(get_db)):
+    """Muestra el formulario de inicio de sesión."""
     token = request.cookies.get(SESSION_COOKIE_NAME)
     if token:
         payload = decode_access_token(token)
@@ -62,58 +49,62 @@ def login_page(
                     if usuario and usuario.activo:
                         return RedirectResponse(url="/", status_code=303)
 
-    return templates.TemplateResponse(
-        request=request,
-        name="auth/login.html",
-        context={},
-    )
+    return templates.TemplateResponse(request=request, name="auth/login.html", context={})
 
 
 @router.post("/login", response_class=HTMLResponse, name="login_submit")
-async def login_submit(
+def login_submit(
     request: Request,
     response: Response,
+    username: str = Form(...),
+    password: str = Form(...),
     db: Session = Depends(get_db),
 ):
-    """
-    Procesa el inicio de sesión.
+    """Procesa el inicio de sesión compatible con HTMX y POST tradicional."""
+    is_htmx = request.headers.get("HX-Request", "").lower() == "true"
 
-    Valida username/password, registra la sesión en BD y establece la cookie
-    HTTPOnly `adrialga_session` con el token JWT.
-    """
-    form = await request.form()
-    username = (form.get("username") or "").strip()
-    password = form.get("password") or ""
-
-    # Validación de credenciales
     usuario = db.scalar(select(Usuario).where(Usuario.username == username))
 
     if not usuario or not verify_password(password, usuario.password_hash):
+        if is_htmx:
+            return HTMLResponse(
+                content="""
+                <div class="alert alert-danger d-flex align-items-center mb-3" role="alert">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    <div>Credenciales incorrectas. Verifique usuario y contraseña.</div>
+                </div>
+                """,
+                status_code=200,
+            )
         return templates.TemplateResponse(
             request=request,
             name="auth/login.html",
-            context={
-                "error": "Credenciales incorrectas. Verifique usuario y contraseña.",
-            },
+            context={"error": "Credenciales incorrectas. Verifique usuario y contraseña."},
         )
 
     if not usuario.activo:
+        if is_htmx:
+            return HTMLResponse(
+                content="""
+                <div class="alert alert-warning d-flex align-items-center mb-3" role="alert">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    <div>Usuario inactivo. Contacte al administrador del sistema.</div>
+                </div>
+                """,
+                status_code=200,
+            )
         return templates.TemplateResponse(
             request=request,
             name="auth/login.html",
-            context={
-                "error": "Usuario inactivo. Contacte al administrador del sistema.",
-            },
+            context={"error": "Usuario inactivo. Contacte al administrador del sistema."},
         )
 
-    # Generar token JWT
     token = create_access_token(
         subject=str(usuario.id),
         expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
         extra_claims={"username": usuario.username, "rol_id": usuario.rol_id},
     )
 
-    # Registrar sesión en BD
     db.add(
         SesionUsuario(
             id=token,
@@ -128,12 +119,9 @@ async def login_submit(
     )
     db.commit()
 
-    # Si la solicitud es HTMX, redirigir con HX-Redirect
-    hx_request = request.headers.get("HX-Request", "").lower() == "true"
-
-    if hx_request:
-        response_content = HTMLResponse("")
-        response_content.set_cookie(
+    if is_htmx:
+        res = HTMLResponse("", status_code=200)
+        res.set_cookie(
             key=SESSION_COOKIE_NAME,
             value=token,
             httponly=True,
@@ -141,10 +129,10 @@ async def login_submit(
             max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
             path="/",
         )
-        response_content.headers["HX-Redirect"] = "/"
-        return response_content
+        res.headers["HX-Redirect"] = "/"
+        return res
 
-    redirect = RedirectResponse(url="/", status_code=303)
+    redirect = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
     redirect.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=token,
@@ -157,16 +145,8 @@ async def login_submit(
 
 
 @router.get("/logout", response_class=RedirectResponse, name="logout")
-def logout(
-    request: Request,
-    response: Response,
-    db: Session = Depends(get_db),
-):
-    """
-    Cierra la sesión del usuario.
-
-    Inactiva la sesión en BD y elimina la cookie `adrialga_session`.
-    """
+def logout(request: Request, response: Response, db: Session = Depends(get_db)):
+    """Inactiva sesión en BD y elimina la cookie."""
     token = request.cookies.get(SESSION_COOKIE_NAME)
     if token:
         sesion = db.get(SesionUsuario, token)
@@ -174,5 +154,6 @@ def logout(
             sesion.activa = False
             db.commit()
 
-    response.delete_cookie(SESSION_COOKIE_NAME, path="/")
-    return RedirectResponse(url="/login", status_code=303)
+    redirect = RedirectResponse(url="/login", status_code=303)
+    redirect.delete_cookie(SESSION_COOKIE_NAME, path="/")
+    return redirect

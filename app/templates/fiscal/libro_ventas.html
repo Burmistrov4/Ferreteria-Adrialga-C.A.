@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends base_template | default('base.html') %}
 
 {% block title %}Libro de Ventas - Fiscal{% endblock %}
 {% block page_title %}Libro de Ventas Digital (SENIAT){% endblock %}

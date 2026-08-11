@@ -11,7 +11,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 # ============================================================
@@ -111,8 +111,7 @@ class BitacoraItem(BaseModel):
     descripcion: str
     ip_address: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BitacoraResumen(BaseModel):

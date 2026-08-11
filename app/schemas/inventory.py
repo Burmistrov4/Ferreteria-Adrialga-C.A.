@@ -11,7 +11,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 # ============================================================
@@ -39,8 +39,7 @@ class CategoriaResponse(CategoriaBase):
     """Schema de respuesta para categoría."""
     id: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============================================================
@@ -94,8 +93,7 @@ class ProductoResponse(ProductoBase):
     alicuota_codigo: Optional[str] = None
     alicuota_porcentaje: Optional[Decimal] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============================================================
@@ -112,8 +110,7 @@ class KardexMovimientoResponse(BaseModel):
     origen_id: Optional[int]
     fecha: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ProductoConKardex(ProductoResponse):

@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends base_template | default('base.html') %}
 
 {% block title %}Punto de Venta - POS{% endblock %}
 {% block page_title %}Terminal de Ventas{% endblock %}
@@ -83,16 +83,22 @@
         <!-- Búsqueda de Cliente -->
         <div class="card">
             <div class="card-body">
-                <label class="form-label small text-muted">Cliente</label>
-                <input type="text"
-                       id="buscarCliente"
-                       class="form-control mb-2"
-                       placeholder="Buscar por RIF o nombre..."
-                       hx-get="/pos/buscar-cliente"
-                       hx-trigger="keyup changed delay:300ms"
-                       hx-target="#resultadosCliente"
-                       autocomplete="off">
+                <label class="form-label small text-muted">Cliente / RIF</label>
+                <div class="input-group mb-2">
+                    <input type="text"
+                           id="buscarCliente"
+                           class="form-control"
+                           placeholder="Buscar por RIF o nombre..."
+                           hx-get="/pos/buscar-cliente"
+                           hx-trigger="keyup changed delay:300ms"
+                           hx-target="#resultadosCliente"
+                           autocomplete="off">
+                    <button class="btn btn-outline-primary" type="button" id="btnConsultarSeniatPos" title="Consultar SENIAT">
+                        <i class="bi bi-search"></i>
+                    </button>
+                </div>
                 <div id="resultadosCliente" class="search-results"></div>
+                <div id="seniatFeedbackPos" class="small mt-1"></div>
                 <input type="hidden" id="clienteId" value="">
                 <div id="clienteSeleccionado" class="small text-primary fw-semibold"></div>
             </div>
@@ -315,6 +321,50 @@ document.getElementById('buscarCliente').addEventListener('keydown', function(e)
         if (primerResultado) {
             primerResultado.click();
         }
+    }
+});
+
+// Consultar RIF en SENIAT (POS)
+document.getElementById('btnConsultarSeniatPos').addEventListener('click', async function() {
+    const rif = document.getElementById('buscarCliente').value;
+    const feedback = document.getElementById('seniatFeedbackPos');
+    if (!rif) {
+        feedback.innerHTML = '<span class="text-muted">Ingrese un RIF o cédula</span>';
+        return;
+    }
+
+    feedback.innerHTML = '<span class="text-primary"><i class="bi bi-hourglass-split me-1"></i>Consultando SENIAT...</span>';
+
+    try {
+        const resp = await fetch(`/api/seniat/consultar/${encodeURIComponent(rif)}`);
+        const data = await resp.json();
+
+        if (data.success) {
+            // Autocompletar cliente con datos del SENIAT
+            clienteSeleccionado = {
+                id: null,
+                cedula_rif: data.rif,
+                razon_social: data.nombre
+            };
+            document.getElementById('clienteId').value = '';
+            document.getElementById('clienteSeleccionado').textContent =
+                `${data.nombre} (${data.rif})`;
+            feedback.innerHTML =
+                '<span class="text-success"><i class="bi bi-check-circle me-1"></i>Datos obtenidos del SENIAT</span>';
+        } else {
+            feedback.innerHTML =
+                '<span class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>No se pudo consultar el SENIAT. Puede editar manualmente.</span>';
+        }
+    } catch (err) {
+        feedback.innerHTML =
+            '<span class="text-danger"><i class="bi bi-x-circle me-1"></i>Error de conexión. Complete manualmente.</span>';
+    }
+});
+
+// Consultar RIF al perder el foco (blur)
+document.getElementById('buscarCliente').addEventListener('blur', function() {
+    if (this.value.trim()) {
+        document.getElementById('btnConsultarSeniatPos').click();
     }
 });
 

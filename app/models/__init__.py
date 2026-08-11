@@ -20,6 +20,10 @@ from app.models.inventory import (
     KardexMovimiento,
     Producto,
 )
+from app.models.cash import (
+    CierreCaja,
+    SesionCaja,
+)
 from app.models.sales import (
     Cliente,
     CorrelativoFiscal,
@@ -70,6 +74,9 @@ __all__ = [
     "Compra",
     "DetalleCompra",
     "CuentaPorPagar",
+    # Caja
+    "SesionCaja",
+    "CierreCaja",
     # Fiscal
     "CierreZ",
     "DeclaracionIVA",
