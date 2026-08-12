@@ -1,0 +1,213 @@
+{% extends base_template | default('base.html') %}
+
+{% block title %}Usuarios y Roles - Seguridad{% endblock %}
+{% block page_title %}Administración de Usuarios y Roles{% endblock %}
+
+{% block content %}
+<style>
+.seguridad-card { border: 1px solid #dee2e6; border-radius: 0.5rem; padding: 1.5rem; }
+</style>
+
+<div class="row">
+    <div class="col-md-12">
+        <div class="seguridad-card">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0">Usuarios del Sistema</h5>
+                <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalNuevoUsuario">
+                    <i class="bi bi-person-plus me-1"></i> Nuevo Usuario
+                </button>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Usuario</th>
+                            <th>Nombre Completo</th>
+                            <th>Email</th>
+                            <th>Rol</th>
+                            <th class="text-center">Estado</th>
+                            <th class="text-center">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for u in usuarios %}
+                        <tr>
+                            <td>{{ u.username }}</td>
+                            <td>{{ u.nombre_completo }}</td>
+                            <td>{{ u.email }}</td>
+                            <td>{{ u.rol.nombre }}</td>
+                            <td class="text-center">
+                                {% if u.activo %}
+                                <span class="badge bg-success">Activo</span>
+                                {% else %}
+                                <span class="badge bg-danger">Inactivo</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <!-- Botón Editar con data attributes y accesibilidad -->
+                                <button class="btn btn-outline-primary btn-sm btn-edit-user"
+                                        data-id="{{ u.id }}"
+                                        data-username="{{ u.username }}"
+                                        data-rol-id="{{ u.rol_id }}"
+                                        data-activo="{{ 'true' if u.activo else 'false' }}"
+                                        title="Editar usuario"
+                                        aria-label="Editar usuario">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <!-- Botón Cambiar Estado con data attributes y accesibilidad -->
+                                <button class="btn btn-outline-danger btn-sm btn-toggle-user"
+                                        data-id="{{ u.id }}"
+                                        data-activo="{{ 'true' if not u.activo else 'false' }}"
+                                        title="{{ 'Desactivar' if u.activo else 'Activar' }}"
+                                        aria-label="{{ 'Desactivar' if u.activo else 'Activar' }}">
+                                    <i class="bi bi-power"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Nuevo Usuario -->
+<div class="modal fade" id="modalNuevoUsuario" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Nuevo Usuario</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="formNuevoUsuario">
+                    <div class="mb-3">
+                        <label class="form-label small" for="user-username">Username</label>
+                        <input type="text" class="form-control form-control-sm" id="user-username" required placeholder="Nombre de usuario">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small" for="user-nombre">Nombre Completo</label>
+                        <input type="text" class="form-control form-control-sm" id="user-nombre" required placeholder="Nombre completo">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small" for="user-email">Email</label>
+                        <input type="email" class="form-control form-control-sm" id="user-email" required placeholder="correo@ejemplo.com">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small" for="user-password">Contraseña</label>
+                        <input type="password" class="form-control form-control-sm" id="user-password" required placeholder="********">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small" for="user-rol">Rol</label>
+                        <select class="form-select form-select-sm" id="user-rol" required>
+                            {% for r in roles %}
+                            <option value="{{ r.id }}">{{ r.nombre }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary btn-sm" id="btnGuardarUsuario">Guardar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Editar Usuario (cargado dinámicamente) -->
+<div class="modal fade" id="modalEditarUsuario" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Editar Usuario</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="formEditarUsuario">
+                    <input type="hidden" id="edit-user-id">
+                    <div class="mb-3">
+                        <label class="form-label small" for="edit-username">Username</label>
+                        <input type="text" class="form-control form-control-sm" id="edit-username" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small" for="edit-nombre">Nombre Completo</label>
+                        <input type="text" class="form-control form-control-sm" id="edit-nombre" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small" for="edit-email">Email</label>
+                        <input type="email" class="form-control form-control-sm" id="edit-email" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small" for="edit-rol">Rol</label>
+                        <select class="form-select form-select-sm" id="edit-rol" required>
+                            {% for r in roles %}
+                            <option value="{{ r.id }}">{{ r.nombre }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary btn-sm" id="btnActualizarUsuario">Actualizar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Manejar clic en botón Editar - leer data-attributes y cargar modal
+    document.querySelectorAll('.btn-edit-user').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            const id = this.dataset.id;
+            const username = this.dataset.username;
+            const rolId = this.dataset.rolId;
+            const activo = this.dataset.activo;
+
+            // Cargar datos en el modal de edición
+            document.getElementById('edit-user-id').value = id;
+            document.getElementById('edit-username').value = username;
+
+            // Cargar rol seleccionado
+            const rolSelect = document.getElementById('edit-rol');
+            // Seleccionar el rol por su ID
+            for (let i = 0; i < rolSelect.options.length; i++) {
+                if (rolSelect.options[i].value === rolId) {
+                    rolSelect.selectedIndex = i;
+                    break;
+                }
+            }
+
+            // Mostrar modal
+            const modal = new bootstrap.Modal(document.getElementById('modalEditarUsuario'));
+            modal.show();
+        });
+    });
+
+    // Manejar clic en botón Toggle (activar/desactivar)
+    document.querySelectorAll('.btn-toggle-user').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            const id = this.dataset.id;
+            const activoActual = this.dataset.activo === 'true';
+            const nuevoActivo = !activoActual;
+
+            // Confirmar antes de cambiar estado
+            if (confirm('¿Seguro que desea ' + (nuevoActivo ? 'activar' : 'desactivar') + ' este usuario?')) {
+                // En un caso real, aquí haría el fetch PUT al endpoint correspondiente
+                // fetch(`/usuarios/${id}`, { method: 'PUT', body: JSON.stringify({ activo: nuevoActivo }) })
+                //     .then(r => r.json())
+                //     .then(d => {
+                //         if (d.ok) location.reload();
+                //         else alert('Error: ' + d.error);
+                //     });
+                alert('Cambio de estado solicitado para usuario ID: ' + id + ' a ' + (nuevoActivo ? 'activo' : 'inactivo'));
+            }
+        });
+    });
+});
+</script>
+{% endblock %}

@@ -23,7 +23,13 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_permission
 from app.db.database import get_db
-from app.models.inventory import Categoria, ConfiguracionFiscal, KardexMovimiento, Producto
+from app.models.inventory import (
+    Categoria,
+    ConfiguracionFiscal,
+    KardexMovimiento,
+    Marca,
+    Producto,
+)
 from app.schemas.inventory import (
     CategoriaCreate,
     CategoriaResponse,
@@ -327,6 +333,22 @@ async def actualizar_producto(
     return JSONResponse(status_code=200, content={"ok": True})
 
 
+@router.delete("/inventario/productos/{producto_id}", response_class=JSONResponse)
+async def desactivar_producto(
+    producto_id: int,
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("inventario", "escritura")),
+):
+    """Desactiva (soft-delete) un producto."""
+    producto = db.get(Producto, producto_id)
+    if not producto:
+        return JSONResponse(status_code=404, content={"error": "Producto no encontrado"})
+
+    producto.activo = False
+    db.commit()
+    return JSONResponse(status_code=200, content={"ok": True})
+
+
 # ============================================================
 # ENTRADAS / AJUSTES DE INVENTARIO
 # ============================================================
@@ -569,6 +591,117 @@ async def crear_categoria(
     db.refresh(categoria)
 
     return JSONResponse(status_code=201, content={"id": categoria.id, "nombre": categoria.nombre})
+
+
+# ============================================================
+# MARCAS (JSON + HTMX)
+# ============================================================
+
+@router.get("/inventario/marcas", response_class=JSONResponse)
+async def listar_marcas(
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("inventario", "lectura")),
+    q: str = Query(default="", description="Búsqueda por nombre"),
+):
+    """Devuelve lista de marcas para selects."""
+    stmt = select(Marca).order_by(Marca.nombre)
+    if q.strip():
+        like = f"%{q.strip()}%"
+        stmt = stmt.where(Marca.nombre.ilike(like))
+
+    marcas = db.execute(stmt).scalars().all()
+    return {
+        "marcas": [
+            {"id": m.id, "nombre": m.nombre, "activo": m.activo}
+            for m in marcas
+        ]
+    }
+
+
+@router.post("/inventario/marcas", response_class=JSONResponse)
+async def crear_marca(
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("inventario", "escritura")),
+):
+    """Crea una marca desde modal HTMX o JSON."""
+    form = await request.form()
+    nombre = (form.get("nombre") or "").strip()
+    descripcion = (form.get("descripcion") or "").strip()
+
+    if not nombre:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "El nombre es obligatorio."},
+        )
+
+    existente = db.scalar(select(Marca).where(Marca.nombre == nombre))
+    if existente:
+        return JSONResponse(
+            status_code=409,
+            content={"error": "Ya existe una marca con ese nombre."},
+        )
+
+    marca = Marca(nombre=nombre, descripcion=descripcion)
+    db.add(marca)
+    db.commit()
+    db.refresh(marca)
+
+    return JSONResponse(status_code=201, content={"id": marca.id, "nombre": marca.nombre})
+
+
+@router.put("/inventario/marcas/{marca_id}", response_class=JSONResponse)
+async def actualizar_marca(
+    request: Request,
+    marca_id: int,
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("inventario", "escritura")),
+):
+    """Actualiza una marca."""
+    marca = db.get(Marca, marca_id)
+    if not marca:
+        return JSONResponse(status_code=404, content={"error": "Marca no encontrada"})
+
+    form = await request.form()
+    if "nombre" in form:
+        nombre = (form.get("nombre") or "").strip()
+        if not nombre:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "El nombre es obligatorio."},
+            )
+        existente = db.scalar(
+            select(Marca).where(Marca.nombre == nombre, Marca.id != marca_id)
+        )
+        if existente:
+            return JSONResponse(
+                status_code=409,
+                content={"error": "Ya existe una marca con ese nombre."},
+            )
+        marca.nombre = nombre
+    if "descripcion" in form:
+        marca.descripcion = (form.get("descripcion") or "").strip()
+    if "activo" in form:
+        marca.activo = bool(form.get("activo"))
+
+    db.commit()
+    return JSONResponse(status_code=200, content={"ok": True, "id": marca.id})
+
+
+@router.delete("/inventario/marcas/{marca_id}", response_class=JSONResponse)
+async def desactivar_marca(
+    marca_id: int,
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("inventario", "escritura")),
+):
+    """Desactiva (soft-delete) una marca."""
+    marca = db.get(Marca, marca_id)
+    if not marca:
+        return JSONResponse(status_code=404, content={"error": "Marca no encontrada"})
+
+    marca.activo = False
+    db.commit()
+    return JSONResponse(status_code=200, content={"ok": True})
 
 
 @router.get("/inventario/alicuotas", response_class=JSONResponse)

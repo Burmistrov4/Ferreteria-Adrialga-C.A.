@@ -10,7 +10,7 @@ from app.core.security import get_password_hash
 from app.db.database import Base, get_db
 from app.main import app
 from app.models import Role, Usuario
-from app.models.inventory import Categoria, ConfiguracionFiscal, KardexMovimiento, Producto
+from app.models.inventory import Categoria, ConfiguracionFiscal, KardexMovimiento, Marca, Producto
 
 
 def build_test_client():
@@ -383,6 +383,80 @@ def test_kardex_data_returns_movimientos_paginados():
     assert data["movimientos"][0]["tipo_movimiento"] in ("ENTRADA", "SALIDA")
     assert "stock_inicial" in data["movimientos"][0]
     assert "stock_final" in data["movimientos"][0]
+
+
+def test_desactivar_producto_soft_delete():
+    client, TestingSessionLocal = build_test_client()
+    try:
+        db = TestingSessionLocal()
+        try:
+            create_superuser(db, "superuser_softdelete", "contraseña_segura")
+            categoria, alicuota = create_categoria_y_alicuota(db)
+            producto = Producto(
+                codigo_barras="5555555555555",
+                descripcion="Producto a desactivar",
+                categoria_id=categoria.id,
+                alicuota_id=alicuota.id,
+                precio_ref=Decimal("15.00"),
+                stock_actual=Decimal("3.000"),
+                stock_minimo=Decimal("1.000"),
+                activo=True,
+            )
+            db.add(producto)
+            db.commit()
+            db.refresh(producto)
+        finally:
+            db.close()
+
+        response = client.post(
+            "/login",
+            data={"username": "superuser_softdelete", "password": "contraseña_segura"},
+            headers={"HX-Request": "true"},
+        )
+        assert response.status_code == 200
+
+        response = client.delete(f"/inventario/productos/{producto.id}")
+    finally:
+        del app.dependency_overrides[get_db]
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+
+    db = TestingSessionLocal()
+    try:
+        producto_desactivado = db.get(Producto, producto.id)
+        assert producto_desactivado.activo is False
+    finally:
+        db.close()
+
+
+def test_crear_marca_duplicada_returns_409():
+    client, TestingSessionLocal = build_test_client()
+    try:
+        db = TestingSessionLocal()
+        try:
+            create_superuser(db, "superuser_marca", "contraseña_segura")
+            db.add(Marca(nombre="Stanley", descripcion="Marca de prueba"))
+            db.commit()
+        finally:
+            db.close()
+
+        response = client.post(
+            "/login",
+            data={"username": "superuser_marca", "password": "contraseña_segura"},
+            headers={"HX-Request": "true"},
+        )
+        assert response.status_code == 200
+
+        response = client.post(
+            "/inventario/marcas",
+            data={"nombre": "Stanley", "descripcion": "Duplicada"},
+        )
+    finally:
+        del app.dependency_overrides[get_db]
+
+    assert response.status_code == 409
+    assert "Ya existe una marca" in response.json()["error"]
 
 
 def test_actualizar_producto_no_encontrado_returns_404():

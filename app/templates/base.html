@@ -198,12 +198,22 @@
             {% if usuario.es_superuser or usuario.rol.nombre == 'Administrador' %}
             <li class="sidebar-section">SEGURIDAD</li>
             <li class="nav-item">
-                <a class="nav-link" href="#">
+                <a class="nav-link"
+                   hx-get="/usuarios"
+                   hx-target="#content"
+                   hx-swap="innerHTML"
+                   hx-push-url="true"
+                   href="/usuarios">
                     <i class="bi bi-people me-2"></i> Usuarios y Roles
                 </a>
             </li>
             <li class="nav-item">
-                <a class="nav-link" href="#">
+                <a class="nav-link"
+                   hx-get="/configuracion"
+                   hx-target="#content"
+                   hx-swap="innerHTML"
+                   hx-push-url="true"
+                   href="/configuracion">
                     <i class="bi bi-gear me-2"></i> Configuración
                 </a>
             </li>

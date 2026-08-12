@@ -1,7 +1,7 @@
 """
 Modelos ORM — Módulo de Inventario y Configuración Fiscal.
 
-Tablas: categorias, configuracion_fiscal, productos, kardex_movimientos
+Tablas: categorias, marcas, configuracion_fiscal, productos, kardex_movimientos
 """
 
 from datetime import datetime, timezone
@@ -33,6 +33,20 @@ class Categoria(Base):
 
     # Relaciones
     productos: Mapped[List["Producto"]] = relationship(back_populates="categoria")
+
+
+class Marca(Base):
+    """Tabla: marcas"""
+
+    __tablename__ = "marcas"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    nombre: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
+    descripcion: Mapped[Optional[str]] = mapped_column(Text)
+    activo: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # Relaciones
+    productos: Mapped[List["Producto"]] = relationship(back_populates="marca")
 
 
 class ConfiguracionFiscal(Base):
@@ -70,6 +84,9 @@ class Producto(Base):
     categoria_id: Mapped[int] = mapped_column(
         ForeignKey("categorias.id"), nullable=False
     )
+    marca_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("marcas.id"), nullable=True
+    )
     alicuota_id: Mapped[int] = mapped_column(
         ForeignKey("configuracion_fiscal.id"), nullable=False
     )
@@ -84,6 +101,7 @@ class Producto(Base):
 
     # Relaciones
     categoria: Mapped["Categoria"] = relationship(back_populates="productos")
+    marca: Mapped[Optional["Marca"]] = relationship(back_populates="productos")
     alicuota: Mapped["ConfiguracionFiscal"] = relationship(back_populates="productos")
     movimientos_kardex: Mapped[List["KardexMovimiento"]] = relationship(
         back_populates="producto", cascade="all, delete-orphan"

@@ -9,6 +9,7 @@ from decimal import Decimal
 from typing import List, Optional
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -33,6 +34,7 @@ class Proveedor(Base):
     direccion: Mapped[Optional[str]] = mapped_column(Text)
     telefono: Mapped[Optional[str]] = mapped_column(String(20))
     contacto: Mapped[Optional[str]] = mapped_column(String(100))
+    activo: Mapped[bool] = mapped_column(Boolean, default=True)
 
     # Relaciones
     compras: Mapped[List["Compra"]] = relationship(back_populates="proveedor")

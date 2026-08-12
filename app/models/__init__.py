@@ -18,6 +18,7 @@ from app.models.inventory import (
     Categoria,
     ConfiguracionFiscal,
     KardexMovimiento,
+    Marca,
     Producto,
 )
 from app.models.cash import (
@@ -57,6 +58,7 @@ __all__ = [
     "BitacoraAuditoria",
     # Inventory
     "Categoria",
+    "Marca",
     "ConfiguracionFiscal",
     "Producto",
     "KardexMovimiento",

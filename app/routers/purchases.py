@@ -120,19 +120,46 @@ async def proveedor_editar(
     db: Session = Depends(get_db),
     usuario=Depends(require_permission("proveedores", "editar")),
 ):
-    """Actualiza datos de un proveedor."""
+    """Actualiza datos de un proveedor con validación de RIF duplicado."""
     proveedor = db.get(Proveedor, proveedor_id)
     if not proveedor:
         return JSONResponse(status_code=404, content={"error": "Proveedor no encontrado"})
 
+    # Validar RIF duplicado si se está cambiando
+    if data.rif and data.rif != proveedor.rif:
+        existente = db.scalar(
+            select(Proveedor).where(Proveedor.rif == data.rif, Proveedor.id != proveedor_id)
+        )
+        if existente:
+            return JSONResponse(
+                status_code=409,
+                content={"error": f"Ya existe un proveedor con RIF {data.rif}."},
+            )
+
     for campo, valor in data.model_dump(exclude_unset=True).items():
         setattr(proveedor, campo, valor)
 
-    db.flush()
+    db.commit()
     return JSONResponse(
         status_code=200,
         content={"ok": True, "proveedor": {"id": proveedor.id, "razon_social": proveedor.razon_social}},
     )
+
+
+@router.delete("/compras/proveedores/{proveedor_id}", response_class=JSONResponse)
+async def desactivar_proveedor(
+    proveedor_id: int,
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("proveedores", "editar")),
+):
+    """Desactiva (soft-delete) un proveedor."""
+    proveedor = db.get(Proveedor, proveedor_id)
+    if not proveedor:
+        return JSONResponse(status_code=404, content={"error": "Proveedor no encontrado"})
+
+    proveedor.activo = False
+    db.commit()
+    return JSONResponse(status_code=200, content={"ok": True})
 
 
 # ============================================================

@@ -36,6 +36,9 @@ class Cliente(Base):
     direccion: Mapped[Optional[str]] = mapped_column(Text)
     telefono: Mapped[Optional[str]] = mapped_column(String(20))
     email: Mapped[Optional[str]] = mapped_column(String(120))
+    limite_credito: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), default=Decimal("0.00")
+    )
 
     # Relaciones
     facturas: Mapped[List["Factura"]] = relationship(back_populates="cliente")

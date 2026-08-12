@@ -85,6 +85,65 @@ async def devoluciones_index(
     )
 
 
+@router.get("/configuracion", response_class=HTMLResponse)
+async def configuracion_index(
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("ventas", "ver")),
+):
+    """Vista de configuración de tasa de cambio y parámetros fiscales."""
+    tasa = db.scalar(select(TasaRef).order_by(TasaRef.fecha.desc()).limit(1))
+    historico = db.execute(
+        select(TasaRef).order_by(TasaRef.fecha.desc()).limit(10)
+    ).scalars().all()
+
+    is_htmx = request.headers.get("HX-Request") == "true"
+    base_template = "partial.html" if is_htmx else "base.html"
+
+    return templates.TemplateResponse(
+        request=request,
+        name="configuracion/index.html",
+        context={
+            "usuario": usuario,
+            "tasa": tasa,
+            "historico": historico,
+            "base_template": base_template,
+        },
+    )
+
+
+@router.post("/pos/tasa-ref", response_class=JSONResponse)
+async def actualizar_tasa_ref(
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("ventas", "editar")),
+):
+    """Registra una nueva tasa de cambio USD/VES en el histórico."""
+    form = await request.form()
+    monto_bs = Decimal(form.get("monto_bs") or "0")
+    origen = (form.get("origen") or "MANUAL").strip().upper()
+
+    if monto_bs <= 0:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "El monto de la tasa debe ser mayor a cero."},
+        )
+
+    tasa = TasaRef(
+        monto_bs=monto_bs,
+        origen=origen,
+        fecha=datetime.now(timezone.utc),
+    )
+    db.add(tasa)
+    db.commit()
+    db.refresh(tasa)
+
+    return JSONResponse(
+        status_code=201,
+        content={"ok": True, "id": tasa.id, "monto_bs": float(tasa.monto_bs)},
+    )
+
+
 @router.get("/pos/buscar-producto", response_class=JSONResponse)
 async def buscar_producto(
     db: Session = Depends(get_db),
@@ -126,6 +185,57 @@ async def buscar_producto(
             for p in productos
         ]
     }
+
+
+@router.put("/pos/clientes/{cliente_id}", response_class=JSONResponse)
+async def actualizar_cliente(
+    request: Request,
+    cliente_id: int,
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("ventas", "editar")),
+):
+    """Actualiza datos de un cliente con validación de RIF/Cédula duplicado."""
+    cliente = db.get(Cliente, cliente_id)
+    if not cliente:
+        return JSONResponse(status_code=404, content={"error": "Cliente no encontrado"})
+
+    form = await request.form()
+
+    if "cedula_rif" in form:
+        cedula_rif = (form.get("cedula_rif") or "").strip()
+        if not cedula_rif:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "El RIF/Cédula es obligatorio."},
+            )
+        existente = db.scalar(
+            select(Cliente).where(Cliente.cedula_rif == cedula_rif, Cliente.id != cliente_id)
+        )
+        if existente:
+            return JSONResponse(
+                status_code=409,
+                content={"error": f"Ya existe un cliente con RIF/Cédula {cedula_rif}."},
+            )
+        cliente.cedula_rif = cedula_rif
+    if "razon_social" in form:
+        cliente.razon_social = (form.get("razon_social") or "").strip()
+    if "direccion" in form:
+        cliente.direccion = (form.get("direccion") or "").strip()
+    if "telefono" in form:
+        cliente.telefono = (form.get("telefono") or "").strip()
+    if "email" in form:
+        cliente.email = (form.get("email") or "").strip()
+    if "limite_credito" in form:
+        try:
+            cliente.limite_credito = Decimal(form.get("limite_credito") or "0.00")
+        except Exception:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Límite de crédito inválido."},
+            )
+
+    db.commit()
+    return JSONResponse(status_code=200, content={"ok": True, "id": cliente.id})
 
 
 @router.get("/pos/buscar-cliente", response_class=JSONResponse)
