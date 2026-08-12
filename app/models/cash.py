@@ -5,7 +5,7 @@ Tablas:
 - sesiones_caja
 - cierres_caja
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import List, Optional
 
@@ -45,7 +45,7 @@ class SesionCaja(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), nullable=False)
     fecha_apertura: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
     fecha_cierre: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     monto_inicial_bs: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0.00"))
@@ -89,7 +89,7 @@ class CierreCaja(Base):
     usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), nullable=False)
     numero_reporte_z: Mapped[int] = mapped_column(Integer, nullable=False)
     fecha_hora: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
     total_ventas_bs: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0.00"))
     total_ventas_usd: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0.00"))

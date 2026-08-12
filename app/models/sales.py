@@ -5,7 +5,7 @@ Tablas: clientes, tasas_ref, correlativos_fiscales, facturas,
         detalle_ventas, formas_pago, pagos_venta, cuentas_por_cobrar
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import List, Optional
 
@@ -54,7 +54,7 @@ class TasaRef(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     fecha: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
     monto_bs: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
     origen: Mapped[str] = mapped_column(String(30), default="BCV", nullable=False)
@@ -116,7 +116,7 @@ class Factura(Base):
     total_ref: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
     estado: Mapped[str] = mapped_column(String(20), default="EMITIDA", nullable=False)
     fecha_emision: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
     # Relaciones

@@ -4,7 +4,7 @@ Modelos ORM — Módulo de Inventario y Configuración Fiscal.
 Tablas: categorias, configuracion_fiscal, productos, kardex_movimientos
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import List, Optional
 
@@ -120,7 +120,7 @@ class KardexMovimiento(Base):
     )
     origen_id: Mapped[Optional[int]] = mapped_column(nullable=True)
     fecha: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
     # Relaciones

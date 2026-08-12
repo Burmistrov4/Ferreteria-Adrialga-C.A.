@@ -5,7 +5,7 @@ Tablas: roles, modulos, permisos, rol_permisos, usuarios,
         sesiones_usuario, bitacora_auditoria
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from sqlalchemy import (
@@ -98,7 +98,7 @@ class Usuario(Base):
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
     es_superuser: Mapped[bool] = mapped_column(Boolean, default=False)
     fecha_creacion: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
     # Relaciones
@@ -127,7 +127,7 @@ class SesionUsuario(Base):
     ip_address: Mapped[Optional[str]] = mapped_column(String(45))
     user_agent: Mapped[Optional[str]] = mapped_column(String(255))
     fecha_inicio: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
     fecha_expiracion: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     activa: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -150,7 +150,7 @@ class BitacoraAuditoria(Base):
     detalles: Mapped[Optional[str]] = mapped_column(Text)
     ip_address: Mapped[Optional[str]] = mapped_column(String(45))
     fecha: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
     # Relaciones

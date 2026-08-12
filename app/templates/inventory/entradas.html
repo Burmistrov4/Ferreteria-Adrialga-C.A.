@@ -1,0 +1,118 @@
+{% extends base_template | default('base.html') %}
+
+{% block title %}Entrada de Inventario{% endblock %}
+{% block page_title %}Entrada / Ajuste de Inventario{% endblock %}
+
+{% block content %}
+<style>
+.entrada-card { border: 1px solid #dee2e6; border-radius: 0.5rem; padding: 1.5rem; }
+</style>
+
+<div class="row">
+    <div class="col-md-12">
+        <div class="entrada-card">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0">Registrar Entrada / Ajuste Positivo</h5>
+            </div>
+
+            <form id="formEntrada">
+                <div class="row g-2">
+                    <div class="col-md-4">
+                        <label class="form-label small">Producto</label>
+                        <select id="productoId" class="form-select form-select-sm" required>
+                            <option value="">-- Seleccione --</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small">Tipo de Movimiento</label>
+                        <select id="tipoMovimiento" class="form-select form-select-sm">
+                            <option value="ENTRADA">Entrada</option>
+                            <option value="AJUSTE">Ajuste Positivo</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small">Cantidad</label>
+                        <input type="number" id="cantidad" class="form-control form-control-sm" 
+                               value="1" min="0.001" step="0.001" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small">Costo Ref. (Bs)</label>
+                        <input type="number" id="costoRef" class="form-control form-control-sm" 
+                               value="0.00" min="0" step="0.01" required>
+                    </div>
+                </div>
+
+                <div class="row g-2 mt-2">
+                    <div class="col-md-8">
+                        <label class="form-label small">Motivo</label>
+                        <input type="text" id="motivo" class="form-control form-control-sm" 
+                               placeholder="Ej: Compra directa, ajuste de inventario, devolución de cliente..." required>
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                        <button type="submit" class="btn btn-success btn-sm w-100">
+                            <i class="bi bi-check-circle me-1"></i> Registrar Entrada
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+async function cargarProductos() {
+    try {
+        const resp = await fetch('/inventario/productos/data');
+        if (!resp.ok) throw new Error('Error al cargar productos');
+        const data = await resp.json();
+
+        const select = document.getElementById('productoId');
+        select.innerHTML = '<option value="">-- Seleccione --</option>';
+        (data.productos || []).forEach(p => {
+            const option = document.createElement('option');
+            option.value = p.id;
+            option.textContent = `${p.codigo_barras} - ${p.descripcion} (Stock: ${p.stock_actual})`;
+            select.appendChild(option);
+        });
+    } catch (err) {
+        console.error('Error al cargar productos:', err);
+        alert('Error al cargar productos: ' + err.message);
+    }
+}
+
+document.getElementById('formEntrada').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    const formData = new FormData();
+    formData.append('producto_id', document.getElementById('productoId').value);
+    formData.append('tipo_movimiento', document.getElementById('tipoMovimiento').value);
+    formData.append('cantidad', document.getElementById('cantidad').value);
+    formData.append('costo_ref', document.getElementById('costoRef').value);
+    formData.append('motivo', document.getElementById('motivo').value);
+
+    try {
+        const resp = await fetch('/inventario/entradas', {
+            method: 'POST',
+            body: formData,
+        });
+
+        const result = await resp.json();
+
+        if (resp.ok) {
+            alert(`Entrada registrada. Nuevo stock: ${result.nuevo_stock}`);
+            document.getElementById('cantidad').value = '1';
+            document.getElementById('costoRef').value = '0.00';
+            document.getElementById('motivo').value = '';
+            cargarProductos();
+        } else {
+            alert('Error: ' + result.error);
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+});
+
+// Inicializar
+cargarProductos();
+</script>
+{% endblock %}

@@ -10,7 +10,7 @@ Rutas:
 - POST /inventario/categorias  : Crea categoría (JSON/HTMX).
 """
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import List, Optional
 
@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, Request, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_permission
@@ -82,6 +82,40 @@ async def inventario_index(
 # ============================================================
 # TABLA PRODUCTOS (HTMX)
 # ============================================================
+
+@router.get("/inventario/entradas", response_class=HTMLResponse)
+async def entradas_index(
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("inventario", "lectura")),
+):
+    """Vista de Entradas / Ajustes de Inventario."""
+    is_htmx = request.headers.get("HX-Request") == "true"
+    base_template = "partial.html" if is_htmx else "base.html"
+
+    return templates.TemplateResponse(
+        request=request,
+        name="inventory/entradas.html",
+        context={"usuario": usuario, "base_template": base_template},
+    )
+
+
+@router.get("/inventario/kardex", response_class=HTMLResponse)
+async def kardex_index(
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("inventario", "lectura")),
+):
+    """Vista de consulta del Kardex / Movimientos de Inventario."""
+    is_htmx = request.headers.get("HX-Request") == "true"
+    base_template = "partial.html" if is_htmx else "base.html"
+
+    return templates.TemplateResponse(
+        request=request,
+        name="inventory/kardex.html",
+        context={"usuario": usuario, "base_template": base_template},
+    )
+
 
 @router.get("/inventario/tabla", response_class=HTMLResponse)
 async def tabla_productos(
@@ -294,8 +328,200 @@ async def actualizar_producto(
 
 
 # ============================================================
+# ENTRADAS / AJUSTES DE INVENTARIO
+# ============================================================
+
+@router.post("/inventario/entradas", response_class=JSONResponse)
+async def registrar_entrada(
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("inventario", "escritura")),
+):
+    """
+    Registra una entrada o ajuste positivo de inventario.
+
+    Actualiza `stock_actual` del producto y genera un movimiento
+    Kardex tipo 'ENTRADA' o 'AJUSTE' dentro de la misma transacción.
+    """
+    form = await request.form()
+
+    producto_id = int(form.get("producto_id") or 0)
+    cantidad = Decimal(form.get("cantidad") or "0")
+    costo_ref = Decimal(form.get("costo_ref") or "0.00")
+    motivo = (form.get("motivo") or "").strip()
+    tipo = (form.get("tipo_movimiento") or "ENTRADA").strip().upper()
+
+    # Validar tipo de movimiento permitido
+    if tipo not in ("ENTRADA", "AJUSTE"):
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Tipo de movimiento inválido. Use ENTRADA o AJUSTE."},
+        )
+
+    # Validar cantidad positiva
+    if cantidad <= 0:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "La cantidad debe ser mayor a cero."},
+        )
+
+    # Validar producto
+    producto = db.get(Producto, producto_id)
+    if not producto or not producto.activo:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Producto no válido o inactivo."},
+        )
+
+    # Actualizar stock y crear movimiento Kardex (transacción atómica)
+    producto.stock_actual += cantidad
+
+    kardex = KardexMovimiento(
+        producto_id=producto.id,
+        tipo_movimiento=tipo,
+        cantidad=cantidad,
+        costo_ref=costo_ref,
+        origen_id=None,
+        fecha=datetime.now(timezone.utc),
+    )
+    db.add(kardex)
+    db.commit()
+    db.refresh(producto)
+
+    return JSONResponse(
+        status_code=201,
+        content={
+            "ok": True,
+            "producto_id": producto.id,
+            "nuevo_stock": float(producto.stock_actual),
+            "kardex_id": kardex.id,
+            "tipo_movimiento": tipo,
+            "motivo": motivo,
+        },
+    )
+
+
+# ============================================================
+# KARDEX / MOVIMIENTOS (JSON)
+# ============================================================
+
+@router.get("/inventario/kardex/data", response_class=JSONResponse)
+async def kardex_data(
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("inventario", "lectura")),
+    producto_id: Optional[int] = Query(default=None, description="Filtro por producto"),
+    tipo_movimiento: Optional[str] = Query(default=None, description="ENTRADA, SALIDA, AJUSTE"),
+    fecha_desde: Optional[date] = Query(default=None, description="Fecha inicial"),
+    fecha_hasta: Optional[date] = Query(default=None, description="Fecha final"),
+    page: int = Query(default=1, ge=1, description="Número de página"),
+    per_page: int = Query(default=20, ge=1, le=100, description="Items por página"),
+):
+    """
+    Consulta paginada del Kardex con filtros por producto, fechas y tipo.
+
+    Calcula stock inicial y final acumulado para cada movimiento.
+    """
+    filtros = []
+
+    if producto_id:
+        filtros.append(KardexMovimiento.producto_id == producto_id)
+    if tipo_movimiento:
+        filtros.append(KardexMovimiento.tipo_movimiento == tipo_movimiento.upper())
+    if fecha_desde:
+        filtros.append(KardexMovimiento.fecha >= fecha_desde)
+    if fecha_hasta:
+        filtros.append(KardexMovimiento.fecha <= fecha_hasta)
+
+    stmt = (
+        select(KardexMovimiento, Producto)
+        .join(Producto, KardexMovimiento.producto_id == Producto.id)
+        .where(and_(*filtros))
+        .order_by(KardexMovimiento.fecha.desc(), KardexMovimiento.id.desc())
+    )
+
+    total = db.scalar(select(func.count()).select_from(stmt.subquery()))
+    items = db.execute(
+        stmt.offset((page - 1) * per_page).limit(per_page)
+    ).all()
+
+    # Calcular stock acumulado para cada movimiento
+    movimientos = []
+    for kardex, producto in items:
+        # Stock inicial = suma de movimientos anteriores al actual
+        stock_inicial = db.scalar(
+            select(func.coalesce(func.sum(KardexMovimiento.cantidad), 0)).where(
+                KardexMovimiento.producto_id == kardex.producto_id,
+                or_(
+                    KardexMovimiento.fecha < kardex.fecha,
+                    and_(
+                        KardexMovimiento.fecha == kardex.fecha,
+                        KardexMovimiento.id < kardex.id,
+                    ),
+                ),
+            )
+        ) or Decimal("0")
+
+        # Stock final según tipo de movimiento
+        if kardex.tipo_movimiento == "SALIDA":
+            stock_final = stock_inicial - kardex.cantidad
+        else:
+            stock_final = stock_inicial + kardex.cantidad
+
+        movimientos.append(
+            {
+                "id": kardex.id,
+                "fecha": kardex.fecha.isoformat(),
+                "producto_id": producto.id,
+                "codigo_barras": producto.codigo_barras,
+                "descripcion": producto.descripcion,
+                "tipo_movimiento": kardex.tipo_movimiento,
+                "cantidad": float(kardex.cantidad),
+                "costo_ref": float(kardex.costo_ref),
+                "stock_inicial": float(stock_inicial),
+                "stock_final": float(stock_final),
+                "referencia": kardex.origen_id,
+            }
+        )
+
+    total_pages = max(1, (total + per_page - 1) // per_page) if total else 1
+
+    return {
+        "movimientos": movimientos,
+        "total": total or 0,
+        "page": page,
+        "per_page": per_page,
+        "total_pages": total_pages,
+    }
+
+
+# ============================================================
 # CATEGORÍAS (JSON + HTMX rápido)
 # ============================================================
+
+@router.get("/inventario/productos/data", response_class=JSONResponse)
+async def productos_data(
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("inventario", "lectura")),
+):
+    """Devuelve lista de productos activos en JSON para selects/dropdowns."""
+    productos = db.execute(
+        select(Producto)
+        .where(Producto.activo.is_(True))
+        .order_by(Producto.codigo_barras)
+    ).scalars().all()
+    return {
+        "productos": [
+            {
+                "id": p.id,
+                "codigo_barras": p.codigo_barras,
+                "descripcion": p.descripcion,
+                "precio_ref": float(p.precio_ref),
+                "stock_actual": float(p.stock_actual),
+            }
+            for p in productos
+        ]
+    }
+
 
 @router.get("/inventario/categorias", response_class=JSONResponse)
 async def listar_categorias(

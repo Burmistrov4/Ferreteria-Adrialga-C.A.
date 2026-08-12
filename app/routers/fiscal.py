@@ -98,7 +98,11 @@ async def libro_ventas_index(
     return templates.TemplateResponse(
         request=request,
         name="fiscal/libro_ventas.html",
-        context={"usuario": usuario, "base_template": base_template},
+        context={
+            "usuario": usuario,
+            "base_template": base_template,
+            "current_year": datetime.now().year,
+        },
     )
 
 
@@ -115,7 +119,11 @@ async def libro_compras_index(
     return templates.TemplateResponse(
         request=request,
         name="fiscal/libro_compras.html",
-        context={"usuario": usuario, "base_template": base_template},
+        context={
+            "usuario": usuario,
+            "base_template": base_template,
+            "current_year": datetime.now().year,
+        },
     )
 
 

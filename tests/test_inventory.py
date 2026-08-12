@@ -211,6 +211,180 @@ def test_actualizar_producto_modifies_fields():
         db.close()
 
 
+def test_registrar_entrada_actualiza_stock_y_genera_kardex():
+    client, TestingSessionLocal = build_test_client()
+    try:
+        db = TestingSessionLocal()
+        try:
+            create_superuser(db, "superuser_entrada", "contraseña_segura")
+            categoria, alicuota = create_categoria_y_alicuota(db)
+            producto = Producto(
+                codigo_barras="7777777777777",
+                descripcion="Caja de clavos",
+                categoria_id=categoria.id,
+                alicuota_id=alicuota.id,
+                precio_ref=Decimal("30.00"),
+                stock_actual=Decimal("5.000"),
+                stock_minimo=Decimal("1.000"),
+                activo=True,
+            )
+            db.add(producto)
+            db.commit()
+            db.refresh(producto)
+        finally:
+            db.close()
+
+        response = client.post(
+            "/login",
+            data={"username": "superuser_entrada", "password": "contraseña_segura"},
+            headers={"HX-Request": "true"},
+        )
+        assert response.status_code == 200
+
+        response = client.post(
+            "/inventario/entradas",
+            data={
+                "producto_id": str(producto.id),
+                "tipo_movimiento": "ENTRADA",
+                "cantidad": "10.000",
+                "costo_ref": "25.00",
+                "motivo": "Compra directa",
+            },
+        )
+    finally:
+        del app.dependency_overrides[get_db]
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["ok"] is True
+    assert data["nuevo_stock"] == 15.0
+    assert data["tipo_movimiento"] == "ENTRADA"
+
+    db = TestingSessionLocal()
+    try:
+        producto_actualizado = db.get(Producto, producto.id)
+        assert producto_actualizado.stock_actual == Decimal("15.000")
+
+        movimiento = db.scalar(
+            select(KardexMovimiento).where(
+                KardexMovimiento.producto_id == producto.id,
+                KardexMovimiento.tipo_movimiento == "ENTRADA",
+            )
+        )
+        assert movimiento is not None
+        assert movimiento.cantidad == Decimal("10.000")
+        assert movimiento.costo_ref == Decimal("25.00")
+    finally:
+        db.close()
+
+
+def test_registrar_entrada_cantidad_invalida_returns_400():
+    client, TestingSessionLocal = build_test_client()
+    try:
+        db = TestingSessionLocal()
+        try:
+            create_superuser(db, "superuser_entrada_invalida", "contraseña_segura")
+            categoria, alicuota = create_categoria_y_alicuota(db)
+            producto = Producto(
+                codigo_barras="8888888888888",
+                descripcion="Tornillos",
+                categoria_id=categoria.id,
+                alicuota_id=alicuota.id,
+                precio_ref=Decimal("10.00"),
+                stock_actual=Decimal("2.000"),
+                stock_minimo=Decimal("1.000"),
+                activo=True,
+            )
+            db.add(producto)
+            db.commit()
+            db.refresh(producto)
+        finally:
+            db.close()
+
+        response = client.post(
+            "/login",
+            data={"username": "superuser_entrada_invalida", "password": "contraseña_segura"},
+            headers={"HX-Request": "true"},
+        )
+        assert response.status_code == 200
+
+        response = client.post(
+            "/inventario/entradas",
+            data={
+                "producto_id": str(producto.id),
+                "tipo_movimiento": "ENTRADA",
+                "cantidad": "0",
+                "costo_ref": "10.00",
+                "motivo": "Cantidad inválida",
+            },
+        )
+    finally:
+        del app.dependency_overrides[get_db]
+
+    assert response.status_code == 400
+    assert "mayor a cero" in response.json()["error"]
+
+
+def test_kardex_data_returns_movimientos_paginados():
+    client, TestingSessionLocal = build_test_client()
+    try:
+        db = TestingSessionLocal()
+        try:
+            create_superuser(db, "superuser_kardex", "contraseña_segura")
+            categoria, alicuota = create_categoria_y_alicuota(db)
+            producto = Producto(
+                codigo_barras="6666666666666",
+                descripcion="Pintura blanca",
+                categoria_id=categoria.id,
+                alicuota_id=alicuota.id,
+                precio_ref=Decimal("40.00"),
+                stock_actual=Decimal("20.000"),
+                stock_minimo=Decimal("2.000"),
+                activo=True,
+            )
+            db.add(producto)
+            db.flush()
+
+            # Crear movimientos Kardex
+            db.add(KardexMovimiento(
+                producto_id=producto.id,
+                tipo_movimiento="ENTRADA",
+                cantidad=Decimal("10.000"),
+                costo_ref=Decimal("40.00"),
+                origen_id=None,
+            ))
+            db.add(KardexMovimiento(
+                producto_id=producto.id,
+                tipo_movimiento="SALIDA",
+                cantidad=Decimal("3.000"),
+                costo_ref=Decimal("40.00"),
+                origen_id=1,
+            ))
+            db.commit()
+            db.refresh(producto)
+        finally:
+            db.close()
+
+        response = client.post(
+            "/login",
+            data={"username": "superuser_kardex", "password": "contraseña_segura"},
+            headers={"HX-Request": "true"},
+        )
+        assert response.status_code == 200
+
+        response = client.get(f"/inventario/kardex/data?producto_id={producto.id}")
+    finally:
+        del app.dependency_overrides[get_db]
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 2
+    assert len(data["movimientos"]) == 2
+    assert data["movimientos"][0]["tipo_movimiento"] in ("ENTRADA", "SALIDA")
+    assert "stock_inicial" in data["movimientos"][0]
+    assert "stock_final" in data["movimientos"][0]
+
+
 def test_actualizar_producto_no_encontrado_returns_404():
     client, TestingSessionLocal = build_test_client()
     try:

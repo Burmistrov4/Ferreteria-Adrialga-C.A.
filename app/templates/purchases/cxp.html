@@ -84,11 +84,21 @@
 let cxpSeleccionada = null;
 
 async function cargarDatos() {
+    const tbody = document.getElementById('tablaCxp');
+    // Mostrar estado de carga
+    tbody.innerHTML = `
+        <tr>
+            <td colspan="6" class="text-center text-muted py-4">
+                <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                Cargando datos...
+            </td>
+        </tr>
+    `;
+
     try {
         const resp = await fetch('/compras/cxp/data');
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = await resp.json();
-        
-        const tbody = document.getElementById('tablaCxp');
         
         if (data.resumenes && data.resumenes.length > 0) {
             let html = '';
@@ -97,8 +107,8 @@ async function cargarDatos() {
                     <tr>
                         <td>${r.proveedor_nombre}</td>
                         <td class="text-center">${r.cantidad_deudas}</td>
-                        <td class="text-end">Bs ${r.monto_total.toFixed(2)}</td>
-                        <td class="text-end">Bs ${r.saldo_pendiente.toFixed(2)}</td>
+                        <td class="text-end">Bs ${Number(r.monto_total).toFixed(2)}</td>
+                        <td class="text-end">Bs ${Number(r.saldo_pendiente).toFixed(2)}</td>
                         <td class="text-center">
                             ${r.vencidas > 0 ? `<span class="estado-pendiente">${r.vencidas}</span>` : '0'}
                         </td>
@@ -121,7 +131,14 @@ async function cargarDatos() {
             `;
         }
     } catch (err) {
-        alert('Error al cargar datos: ' + err.message);
+        console.error('Error al cargar CxP:', err);
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="6" class="text-center text-danger py-4">
+                    Error al cargar datos: ${err.message}
+                </td>
+            </tr>
+        `;
     }
 }
 
@@ -172,7 +189,24 @@ document.getElementById('btnConfirmarAbono').addEventListener('click', async fun
     }
 });
 
-// Cargar datos al iniciar
-cargarDatos();
+// Cargar datos al iniciar y al navegar con HTMX
+function initCxp() {
+    if (document.getElementById('tablaCxp')) {
+        cargarDatos();
+    }
+}
+
+// Escuchar eventos HTMX para re-inicializar al volver a la sección
+document.addEventListener('htmx:afterSwap', function(e) {
+    if (e.detail && e.detail.target && e.detail.target.id === 'content') {
+        initCxp();
+    }
+});
+
+// Inicializar al cargar la página
+document.addEventListener('DOMContentLoaded', initCxp);
+if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    initCxp();
+}
 </script>
 {% endblock %}

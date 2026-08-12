@@ -4,7 +4,7 @@ Modelos ORM — Módulo de Compras y Proveedores.
 Tablas: proveedores, compras, detalle_compras, cuentas_por_pagar
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import List, Optional
 
@@ -66,7 +66,7 @@ class Compra(Base):
     iva_bs: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
     total_bs: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
     fecha_compra: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
     # Relaciones

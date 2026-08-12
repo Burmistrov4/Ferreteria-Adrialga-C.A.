@@ -5,8 +5,13 @@ import os
 import warnings
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 # Rutas base
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+# Cargar variables de entorno desde .env (si existe)
+load_dotenv(BASE_DIR / ".env")
 
 # Seguridad y JWT
 SECRET_KEY: str = os.getenv("SECRET_KEY", "9a82647db0916ff46817293a38b1f582f3c0db692b1b3b1f574d7883db61a7a0")

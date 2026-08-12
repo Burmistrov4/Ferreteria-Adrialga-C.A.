@@ -29,7 +29,7 @@
         <div class="col-md-3">
             <label class="form-label small">Año</label>
             <input type="number" id="filtroAnio" class="form-control form-control-sm" 
-                   value="{{ date().year }}" min="2000" max="2099" aria-label="Año">
+                   value="{{ current_year }}" min="2000" max="2099" aria-label="Año">
         </div>
         <div class="col-md-3">
             <button class="btn btn-primary btn-sm w-100" id="btnBuscar">
@@ -107,9 +107,11 @@ document.getElementById('btnBuscar').addEventListener('click', async function() 
             let html = '';
 
             data.detalle.forEach(item => {
+                const fecha = new Date(item.fecha_compra);
+                const fechaStr = isNaN(fecha) ? item.fecha_compra : fecha.toLocaleDateString();
                 html += `
                     <tr>
-                        <td>${item.fecha_compra.toLocaleDateString()}</td>
+                        <td>${fechaStr}</td>
                         <td>${item.rif_proveedor}</td>
                         <td>${item.razon_social}</td>
                         <td>${item.numero_factura}</td>

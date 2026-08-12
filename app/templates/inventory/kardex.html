@@ -1,0 +1,180 @@
+{% extends base_template | default('base.html') %}
+
+{% block title %}Kardex / Movimientos de Inventario{% endblock %}
+{% block page_title %}Kardex / Movimientos de Inventario{% endblock %}
+
+{% block content %}
+<style>
+.kardex-card { border: 1px solid #dee2e6; border-radius: 0.5rem; padding: 1rem; margin-bottom: 1rem; }
+.tabla-kardex { font-size: 0.85rem; }
+.tabla-kardex th { background: #f1f3f5; position: sticky; top: 0; }
+</style>
+
+<div class="kardex-card">
+    <div class="row g-2 align-items-end">
+        <div class="col-md-3">
+            <label class="form-label small" for="filtroProducto">Producto</label>
+            <select id="filtroProducto" class="form-select form-select-sm" aria-label="Producto">
+                <option value="">-- Todos --</option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <label class="form-label small" for="filtroTipo">Tipo de Movimiento</label>
+            <select id="filtroTipo" class="form-select form-select-sm" aria-label="Tipo de movimiento">
+                <option value="">-- Todos --</option>
+                <option value="ENTRADA">Entrada</option>
+                <option value="SALIDA">Salida</option>
+                <option value="AJUSTE">Ajuste</option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <label class="form-label small" for="fechaDesde">Desde</label>
+            <input type="date" id="fechaDesde" class="form-control form-control-sm" aria-label="Fecha desde">
+        </div>
+        <div class="col-md-2">
+            <label class="form-label small" for="fechaHasta">Hasta</label>
+            <input type="date" id="fechaHasta" class="form-control form-control-sm" aria-label="Fecha hasta">
+        </div>
+        <div class="col-md-3">
+            <button class="btn btn-primary btn-sm w-100" id="btnBuscar">
+                <i class="bi bi-search me-1"></i> Buscar
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header bg-white">
+        <div class="d-flex justify-content-between align-items-center">
+            <h6 class="mb-0">Movimientos de Inventario</h6>
+            <span id="resumenFiltro" class="small text-muted"></span>
+        </div>
+    </div>
+    <div class="card-body p-0" style="max-height: 600px; overflow-y: auto;">
+        <table class="table tabla-kardex mb-0">
+            <thead>
+                <tr>
+                    <th>Fecha</th>
+                    <th>Producto</th>
+                    <th class="text-center">Tipo</th>
+                    <th class="text-end">Stock Inicial</th>
+                    <th class="text-end">Cantidad</th>
+                    <th class="text-end">Stock Final</th>
+                    <th class="text-end">Costo Ref.</th>
+                    <th class="text-center">Referencia</th>
+                </tr>
+            </thead>
+            <tbody id="tablaKardexBody">
+                <tr>
+                    <td colspan="8" class="text-center text-muted py-4">
+                        Seleccione filtros y presione "Buscar"
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+let productos = [];
+
+async function cargarProductos() {
+    try {
+        const resp = await fetch('/inventario/productos/data');
+        if (!resp.ok) throw new Error('Error al cargar productos');
+        const data = await resp.json();
+        productos = data.productos || [];
+
+        const select = document.getElementById('filtroProducto');
+        select.innerHTML = '<option value="">-- Todos --</option>';
+        productos.forEach(p => {
+            const option = document.createElement('option');
+            option.value = p.id;
+            option.textContent = `${p.codigo_barras} - ${p.descripcion}`;
+            select.appendChild(option);
+        });
+    } catch (err) {
+        console.error('Error al cargar productos:', err);
+        alert('Error al cargar productos: ' + err.message);
+    }
+}
+
+async function buscarKardex() {
+    const params = new URLSearchParams();
+    const productoId = document.getElementById('filtroProducto').value;
+    const tipo = document.getElementById('filtroTipo').value;
+    const fechaDesde = document.getElementById('fechaDesde').value;
+    const fechaHasta = document.getElementById('fechaHasta').value;
+
+    if (productoId) params.append('producto_id', productoId);
+    if (tipo) params.append('tipo_movimiento', tipo);
+    if (fechaDesde) params.append('fecha_desde', fechaDesde);
+    if (fechaHasta) params.append('fecha_hasta', fechaHasta);
+
+    const tbody = document.getElementById('tablaKardexBody');
+    tbody.innerHTML = `
+        <tr>
+            <td colspan="8" class="text-center text-muted py-4">
+                <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                Cargando movimientos...
+            </td>
+        </tr>
+    `;
+
+    try {
+        const resp = await fetch(`/inventario/kardex/data?${params.toString()}`);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+
+        if (data.movimientos && data.movimientos.length > 0) {
+            let html = '';
+            data.movimientos.forEach(m => {
+                const fecha = new Date(m.fecha);
+                const fechaStr = isNaN(fecha) ? m.fecha : fecha.toLocaleDateString();
+                const badgeClass = m.tipo_movimiento === 'SALIDA' ? 'bg-danger' : 'bg-success';
+                html += `
+                    <tr>
+                        <td>${fechaStr}</td>
+                        <td>${m.codigo_barras} - ${m.descripcion}</td>
+                        <td class="text-center">
+                            <span class="badge ${badgeClass}">${m.tipo_movimiento}</span>
+                        </td>
+                        <td class="text-end">${m.stock_inicial.toFixed(3)}</td>
+                        <td class="text-end">${m.cantidad.toFixed(3)}</td>
+                        <td class="text-end">${m.stock_final.toFixed(3)}</td>
+                        <td class="text-end">Bs ${m.costo_ref.toFixed(2)}</td>
+                        <td class="text-center">${m.referencia || '-'}</td>
+                    </tr>
+                `;
+            });
+            tbody.innerHTML = html;
+            document.getElementById('resumenFiltro').textContent = 
+                `${data.total} movimientos encontrados`;
+        } else {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="8" class="text-center text-muted py-4">
+                        No hay movimientos para los filtros seleccionados
+                    </td>
+                </tr>
+            `;
+            document.getElementById('resumenFiltro').textContent = '0 movimientos';
+        }
+    } catch (err) {
+        console.error('Error al cargar Kardex:', err);
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="8" class="text-center text-danger py-4">
+                    Error al cargar datos: ${err.message}
+                </td>
+            </tr>
+        `;
+    }
+}
+
+document.getElementById('btnBuscar').addEventListener('click', buscarKardex);
+
+// Inicializar
+cargarProductos();
+</script>
+{% endblock %}

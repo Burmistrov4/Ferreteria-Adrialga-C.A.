@@ -15,7 +15,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, Request, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, or_, select
+from sqlalchemy import Integer, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_permission
@@ -63,6 +63,23 @@ async def proveedores_index(
         name="purchases/proveedores.html",
         context={"usuario": usuario, "proveedores": proveedores, "base_template": base_template},
     )
+
+
+@router.get("/compras/proveedores/data", response_class=JSONResponse)
+async def proveedores_data(
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("proveedores", "ver")),
+):
+    """Devuelve lista de proveedores en JSON para selects/dropdowns."""
+    proveedores = db.execute(
+        select(Proveedor).order_by(Proveedor.razon_social)
+    ).scalars().all()
+    return {
+        "proveedores": [
+            {"id": p.id, "rif": p.rif, "razon_social": p.razon_social}
+            for p in proveedores
+        ]
+    }
 
 
 @router.post("/compras/proveedores", response_class=JSONResponse)

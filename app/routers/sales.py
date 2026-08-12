@@ -68,6 +68,23 @@ async def pos_index(
 # BÚSQUEDAS (JSON/HTMX)
 # ============================================================
 
+@router.get("/pos/devoluciones", response_class=HTMLResponse)
+async def devoluciones_index(
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("ventas", "ver")),
+):
+    """Vista de Devoluciones y Notas de Crédito."""
+    is_htmx = request.headers.get("HX-Request") == "true"
+    base_template = "partial.html" if is_htmx else "base.html"
+
+    return templates.TemplateResponse(
+        request=request,
+        name="sales/devoluciones.html",
+        context={"usuario": usuario, "base_template": base_template},
+    )
+
+
 @router.get("/pos/buscar-producto", response_class=JSONResponse)
 async def buscar_producto(
     db: Session = Depends(get_db),

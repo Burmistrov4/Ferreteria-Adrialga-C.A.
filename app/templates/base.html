@@ -63,7 +63,12 @@
                 </a>
             </li>
             <li class="nav-item">
-                <a class="nav-link" href="#">
+                <a class="nav-link"
+                   hx-get="/pos/devoluciones"
+                   hx-target="#content"
+                   hx-swap="innerHTML"
+                   hx-push-url="true"
+                   href="/pos/devoluciones">
                     <i class="bi bi-arrow-counterclockwise me-2"></i> Devoluciones / NC
                 </a>
             </li>
@@ -84,21 +89,21 @@
             </li>
             <li class="nav-item">
                 <a class="nav-link"
-                   hx-get="/inventario/"
+                   hx-get="/inventario/entradas"
                    hx-target="#content"
                    hx-swap="innerHTML"
                    hx-push-url="true"
-                   href="/inventario/">
-                    <i class="bi bi-box-arrow-in-down me-2"></i> Entrada de Inventario
+                   href="/inventario/entradas">
+                    <i class="bi bi-box-arrow-in-down me-2"></i> Entradas / Ajustes
                 </a>
             </li>
             <li class="nav-item">
                 <a class="nav-link"
-                   hx-get="/inventario/"
+                   hx-get="/inventario/kardex"
                    hx-target="#content"
                    hx-swap="innerHTML"
                    hx-push-url="true"
-                   href="/inventario/">
+                   href="/inventario/kardex">
                     <i class="bi bi-list-check me-2"></i> Kárdex / Movimientos
                 </a>
             </li>
