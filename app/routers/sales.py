@@ -276,6 +276,114 @@ async def buscar_cliente(
 
 
 # ============================================================
+# CLIENTES (API rápida para el POS)
+# ============================================================
+
+@router.get("/api/clientes/buscar", response_class=JSONResponse)
+async def api_buscar_cliente_por_cedula(
+    cedula: str = Query(..., description="Cédula/RIF del cliente"),
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("ventas", "ver")),
+):
+    """
+    Busca un cliente por Cédula/RIF para autocompletar en el POS.
+
+    Devuelve 404 con `encontrado: False` si no existe para que el
+    frontend despliegue el modal de registro rápido en caliente.
+    """
+    cedula_limpia = cedula.strip()
+    if not cedula_limpia:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "La cédula/RIF es obligatoria."},
+        )
+
+    cliente = db.scalar(select(Cliente).where(Cliente.cedula_rif == cedula_limpia))
+    if not cliente:
+        return JSONResponse(status_code=404, content={"encontrado": False})
+
+    return JSONResponse(
+        status_code=200,
+        content={
+            "encontrado": True,
+            "cliente": {
+                "id": cliente.id,
+                "cedula_rif": cliente.cedula_rif,
+                "razon_social": cliente.razon_social,
+                "telefono": cliente.telefono,
+                "direccion": cliente.direccion,
+            },
+        },
+    )
+
+
+@router.post("/api/clientes/rapido", response_class=JSONResponse)
+async def api_registrar_cliente_rapido(
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("ventas", "crear")),
+):
+    """
+    Registra un cliente rápido desde el POS sin perder la venta en curso.
+
+    Campos obligatorios: Cédula/RIF y Nombre/Razón Social.
+    Teléfono y Dirección son opcionales pero recomendados.
+    """
+    form = await request.form()
+    cedula_rif = (form.get("cedula_rif") or "").strip()
+    razon_social = (form.get("razon_social") or "").strip()
+    telefono = (form.get("telefono") or "").strip()
+    direccion = (form.get("direccion") or "").strip()
+
+    if not cedula_rif or not razon_social:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "Cédula/RIF y Nombre/Razón Social son obligatorios."
+            },
+        )
+
+    # Validar duplicado
+    existente = db.scalar(select(Cliente).where(Cliente.cedula_rif == cedula_rif))
+    if existente:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "error": f"Ya existe un cliente con RIF/Cédula {cedula_rif}.",
+                "cliente": {
+                    "id": existente.id,
+                    "cedula_rif": existente.cedula_rif,
+                    "razon_social": existente.razon_social,
+                },
+            },
+        )
+
+    cliente = Cliente(
+        cedula_rif=cedula_rif,
+        razon_social=razon_social,
+        telefono=telefono or None,
+        direccion=direccion or None,
+    )
+    db.add(cliente)
+    db.commit()
+    db.refresh(cliente)
+
+    return JSONResponse(
+        status_code=201,
+        content={
+            "ok": True,
+            "cliente": {
+                "id": cliente.id,
+                "cedula_rif": cliente.cedula_rif,
+                "razon_social": cliente.razon_social,
+                "telefono": cliente.telefono,
+                "direccion": cliente.direccion,
+            },
+        },
+    )
+
+
+# ============================================================
 # PROCESAR VENTA (Transacción Atómica)
 # ============================================================
 
@@ -302,8 +410,8 @@ async def procesar_venta(
     except Exception as e:
         return JSONResponse(status_code=400, content={"error": f"Datos inválidos: {e}"})
 
-    # Iniciar transacción atómica
-    with db.begin():
+    # Transacción atómica con try/except
+    try:
         # Obtener tasa del día
         tasa_ref = db.scalar(select(TasaRef).order_by(TasaRef.fecha.desc()).limit(1))
         if not tasa_ref:
@@ -424,19 +532,57 @@ async def procesar_venta(
         # 5. Registrar pagos
         total_pagado_bs = Decimal("0.00")
         for pago in venta.pagos:
-            monto_bs = pago.monto_ves if pago.monto_ves else pago.monto_usd * tasa_ref.monto_bs
+            monto_usd = pago.monto_usd
+            monto_ves = pago.monto_ves
+
+            if monto_ves is not None and monto_ves > 0:
+                # Pago directo en bolivares (Pago Movil / Punto / Efectivo VES)
+                monto_bs = monto_ves
+                monto_origen = monto_ves
+                moneda = "BS"
+                tasa_cambio = Decimal("1.0000")
+            elif monto_usd is not None and monto_usd > 0:
+                # Pago en dolares (Efectivo USD) convertido con tasa BCV en tiempo real
+                monto_bs = Decimal(f"{float(monto_usd * tasa_ref.monto_bs):.2f}")
+                monto_origen = monto_usd
+                moneda = "USD"
+                tasa_cambio = tasa_ref.monto_bs
+            else:
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": "Cada pago debe indicar monto en USD o VES."},
+                )
+
             total_pagado_bs += monto_bs
 
             pago_venta = PagoVenta(
                 factura_id=factura.id,
                 forma_pago_id=pago.forma_pago_id,
-                monto_origen=pago.monto_usd,
-                moneda="USD",
-                tasa_cambio=tasa_ref.monto_bs,
+                monto_origen=monto_origen,
+                moneda=moneda,
+                tasa_cambio=tasa_cambio,
                 monto_bs=monto_bs,
                 referencia=pago.referencia,
             )
             db.add(pago_venta)
+
+        # Validar que el total pagado (convertido a moneda base) cubra o supere la venta
+        if total_pagado_bs < total_bs:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "El total pagado no cubre el monto de la venta.",
+                    "total_bs": float(total_bs),
+                    "total_pagado_bs": float(total_pagado_bs),
+                    "faltante_bs": float(total_bs - total_pagado_bs),
+                },
+            )
+
+        # Vuelto/cambio desglosado por moneda (base = bolivares)
+        vuelto_bs = total_pagado_bs - total_bs
+        vuelto_ref = Decimal("0.00")
+        if vuelto_bs > 0:
+            vuelto_ref = Decimal(f"{float(vuelto_bs / tasa_ref.monto_bs):.2f}")
 
         # 6. Cuentas por Cobrar si hay saldo pendiente
         saldo_pendiente = total_bs - total_pagado_bs
@@ -451,7 +597,14 @@ async def procesar_venta(
             )
             db.add(cxc)
 
-        # Commit automático al salir del bloque with
+        db.commit()
+        db.refresh(factura)
+    except Exception:
+        db.rollback()
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Error al procesar la venta. Operación revertida."},
+        )
 
     return JSONResponse(
         status_code=200,
@@ -461,5 +614,8 @@ async def procesar_venta(
             "numero_factura": numero_factura,
             "total_bs": float(total_bs),
             "total_ref": float(total_ref),
+            "total_pagado_bs": float(total_pagado_bs),
+            "vuelto_bs": float(vuelto_bs),
+            "vuelto_ref": float(vuelto_ref),
         },
     )

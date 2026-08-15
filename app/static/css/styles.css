@@ -132,26 +132,62 @@ body {
     flex-shrink: 0;
 }
 
-/* ============ RESPONSIVE ============ */
-@media (max-width: 991.98px) {
+/* ============ RESPONSIVE (móviles y tabletas <= 768px) ============ */
+@media (max-width: 768px) {
     .sidebar {
         position: fixed;
         left: 0;
         top: 0;
         z-index: 1040;
         transform: translateX(-100%);
-        transition: transform 0.3s ease;
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        will-change: transform;
     }
 
     .sidebar.open {
         transform: translateX(0);
+        box-shadow: 0 0 2rem rgba(0, 0, 0, 0.3);
     }
 
-    body.sidebar-open::before {
-        content: "";
+    /* Overlay clickeable para cerrar sidebar en móvil */
+    .sidebar-overlay {
         position: fixed;
         inset: 0;
         background: rgba(0, 0, 0, 0.5);
         z-index: 1039;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s ease;
     }
+
+    .sidebar-overlay.active {
+        opacity: 1;
+        pointer-events: auto;
+    }
+}
+
+/* ============ ANIMACIONES ============ */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+#content > * {
+    animation: fadeInUp 0.3s ease;
+}
+
+/* Indicador de carga HTMX */
+.htmx-request .htmx-indicator {
+    opacity: 1 !important;
+}
+
+.htmx-indicator {
+    opacity: 0;
+    transition: opacity 0.2s ease;
 }

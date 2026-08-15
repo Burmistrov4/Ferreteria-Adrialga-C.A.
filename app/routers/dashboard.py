@@ -19,7 +19,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, require_permission
+from app.api.deps import get_current_user, require_permission, require_roles
 from app.db.database import get_db
 from app.models import (
     BitacoraAuditoria,
@@ -63,7 +63,7 @@ def _formatear_bs(monto: Decimal | int | float) -> str:
 @router.get("/", response_class=HTMLResponse, name="dashboard")
 def dashboard(
     request: Request,
-    usuario: Usuario = Depends(get_current_user),
+    usuario: Usuario = Depends(require_roles(["Superusuario", "Administrador"])),
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     """

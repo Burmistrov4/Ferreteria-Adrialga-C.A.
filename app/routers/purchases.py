@@ -4,7 +4,10 @@ Router de Compras y Proveedores — Gestión de Compras, Inventario y CxP.
 Rutas:
 - GET/POST /compras/proveedores      : CRUD proveedores
 - GET  /compras                      : Listado de compras
+- GET  /compras/tabla                : Parcial HTMX con tabla de compras filtrada
 - POST /compras/nueva                : Registrar compra (transacción atómica)
+- GET  /compras/{id}/detalle         : Modal HTMX con detalle de compra
+- POST /compras/{id}/anular          : Anular compra (reversión inventario y CxP)
 - GET  /compras/cxp                  : Cuentas por Pagar
 """
 
@@ -23,6 +26,7 @@ from app.db.database import get_db
 from app.models.inventory import KardexMovimiento, Producto
 from app.models.purchases import Compra, CuentaPorPagar, DetalleCompra, Proveedor
 from app.models.sales import TasaRef
+from app.models.security import BitacoraAuditoria, Usuario
 from app.schemas.purchases import (
     CompraCreate,
     CompraFiltro,
@@ -171,16 +175,139 @@ async def compras_index(
     request: Request,
     db: Session = Depends(get_db),
     usuario=Depends(require_permission("compras", "ver")),
+    q: str = Query(default="", description="Búsqueda por proveedor o número de control"),
+    page: int = Query(default=1, ge=1, description="Número de página"),
+    per_page: int = Query(default=20, ge=1, le=100, description="Items por página"),
 ):
     """Vista principal de compras."""
     # Detectar petición HTMX para evitar duplicar el sidebar
     is_htmx = request.headers.get("HX-Request") == "true"
     base_template = "partial.html" if is_htmx else "base.html"
 
+    # Cargar compras iniciales (server-side rendering)
+    stmt = (
+        select(Compra, Proveedor, Usuario)
+        .join(Proveedor, Compra.proveedor_id == Proveedor.id)
+        .join(Usuario, Compra.usuario_id == Usuario.id)
+    )
+    if q.strip():
+        like = f"%{q.strip()}%"
+        stmt = stmt.where(
+            or_(
+                Proveedor.razon_social.ilike(like),
+                Proveedor.rif.ilike(like),
+                Compra.numero_control.ilike(like),
+            )
+        )
+    stmt = stmt.order_by(Compra.fecha_compra.desc())
+    total = db.scalar(select(func.count()).select_from(stmt.subquery()))
+    items = db.execute(
+        stmt.offset((page - 1) * per_page).limit(per_page)
+    ).all()
+
+    compras = []
+    for compra, proveedor, usr in items:
+        compras.append(
+            {
+                "id": compra.id,
+                "numero_control": compra.numero_control,
+                "proveedor_razon": proveedor.razon_social,
+                "proveedor_rif": proveedor.rif,
+                "fecha_compra": compra.fecha_compra.strftime("%d/%m/%Y %H:%M"),
+                "estado": compra.estado,
+                "total_bs": compra.total_bs,
+                "usuario_nombre": usr.nombre_completo,
+            }
+        )
+    total_pages = max(1, (total + per_page - 1) // per_page) if total else 1
+
     return templates.TemplateResponse(
         request=request,
         name="purchases/compras.html",
-        context={"usuario": usuario, "base_template": base_template},
+        context={
+            "usuario": usuario,
+            "base_template": base_template,
+            "q": q,
+            "compras": compras,
+            "page": page,
+            "per_page": per_page,
+            "total": total or 0,
+            "total_pages": total_pages,
+        },
+    )
+
+
+@router.get("/compras/tabla", response_class=HTMLResponse)
+async def compras_tabla(
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("compras", "ver")),
+    q: str = Query(default="", description="Búsqueda por proveedor o número de control"),
+    page: int = Query(default=1, ge=1, description="Número de página"),
+    per_page: int = Query(default=20, ge=1, le=100, description="Items por página"),
+):
+    """
+    Devuelve el parcial HTMX con la tabla de compras paginada y filtrada.
+
+    Parámetros:
+    - q: búsqueda en nombre de proveedor, RIF o número de control.
+    - page / per_page: paginación.
+    """
+    stmt = (
+        select(Compra, Proveedor, Usuario)
+        .join(Proveedor, Compra.proveedor_id == Proveedor.id)
+        .join(Usuario, Compra.usuario_id == Usuario.id)
+    )
+
+    # Filtro de texto
+    if q.strip():
+        like = f"%{q.strip()}%"
+        stmt = stmt.where(
+            or_(
+                Proveedor.razon_social.ilike(like),
+                Proveedor.rif.ilike(like),
+                Compra.numero_control.ilike(like),
+            )
+        )
+
+    # Ordenar por fecha descendente
+    stmt = stmt.order_by(Compra.fecha_compra.desc())
+
+    # Paginación
+    total = db.scalar(select(func.count()).select_from(stmt.subquery()))
+    items = db.execute(
+        stmt.offset((page - 1) * per_page).limit(per_page)
+    ).all()
+
+    compras = []
+    for compra, proveedor, usr in items:
+        compras.append(
+            {
+                "id": compra.id,
+                "numero_control": compra.numero_control,
+                "proveedor_razon": proveedor.razon_social,
+                "proveedor_rif": proveedor.rif,
+                "fecha_compra": compra.fecha_compra.strftime("%d/%m/%Y %H:%M"),
+                "estado": compra.estado,
+                "total_bs": compra.total_bs,
+                "usuario_nombre": usr.nombre_completo,
+            }
+        )
+
+    total_pages = max(1, (total + per_page - 1) // per_page) if total else 1
+
+    return templates.TemplateResponse(
+        request=request,
+        name="purchases/_partials/tabla_compras.html",
+        context={
+            "compras": compras,
+            "q": q,
+            "page": page,
+            "per_page": per_page,
+            "total": total or 0,
+            "total_pages": total_pages,
+            "usuario": usuario,
+        },
     )
 
 
@@ -410,16 +537,141 @@ async def abonar_cxp(
 
     cxp.saldo_pendiente_bs -= monto_bs
 
-    if cxp.saldo_pendiente_bs == 0:
-        cxp.estado = "PAGADA"  # Asumiendo que existe este estado
+    # El estado se determina por el saldo pendiente (no existe campo 'estado' en el modelo)
+    # Si el saldo llega a 0, la CxP queda saldada automáticamente.
 
     db.flush()
 
+    estado = "SALDADA" if cxp.saldo_pendiente_bs == 0 else "PENDIENTE"
     return JSONResponse(
         status_code=200,
         content={
             "ok": True,
             "nuevo_saldo": float(cxp.saldo_pendiente_bs),
-            "estado": cxp.estado,
+            "estado": estado,
+        },
+    )
+
+
+# ============================================================
+# DETALLE DE COMPRA
+# ============================================================
+
+@router.get("/compras/{compra_id}/detalle", response_class=HTMLResponse)
+async def detalle_compra(
+    compra_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("compras", "ver")),
+):
+    """Vista del detalle de una compra con modal HTMX."""
+    compra = db.get(Compra, compra_id)
+    if not compra:
+        return JSONResponse(status_code=404, content={"error": "Compra no encontrada"})
+
+    # Datos del proveedor
+    proveedor = db.get(Proveedor, compra.proveedor_id)
+
+    # Detalles de la compra con productos (usar .all() para obtener tuples (DetalleCompra, Producto))
+    detalles = db.execute(
+        select(DetalleCompra, Producto)
+        .join(Producto, DetalleCompra.producto_id == Producto.id)
+        .where(DetalleCompra.compra_id == compra_id)
+    ).all()
+
+    # Datos del usuario que registró la compra
+    usr = db.get(Usuario, compra.usuario_id)
+
+    # Datos de la CxP asociada
+    cxp = db.scalar(select(CuentaPorPagar).where(CuentaPorPagar.compra_id == compra_id))
+
+    return templates.TemplateResponse(
+        request=request,
+        name="purchases/_partials/modal_detalle_compra.html",
+        context={
+            "usuario": usuario,
+            "compra": compra,
+            "proveedor": proveedor,
+            "usr": usr,
+            "detalles": detalles,
+            "cxp": cxp,
+        },
+    )
+
+
+# ============================================================
+# ANULAR COMPRA
+# ============================================================
+
+@router.post("/compras/{compra_id}/anular", response_class=JSONResponse)
+async def anular_compra(
+    compra_id: int,
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("compras", "editar")),
+):
+    """Anula una compra dentro de una transacción atómica."""
+    compra = db.get(Compra, compra_id)
+    if not compra:
+        return JSONResponse(status_code=404, content={"error": "Compra no encontrada"})
+
+    # Comprobar que no esté anulada previamente
+    if compra.estado == "ANULADA":
+        return JSONResponse(
+            status_code=400,
+            content={"error": "La compra ya ha sido anulada previamente."},
+        )
+
+    try:
+        # 1. Disminuir stock_actual de cada producto en detalle_compras
+        for detalle in compra.detalles:
+            producto = db.get(Producto, detalle.producto_id)
+            if producto:
+                producto.stock_actual -= detalle.cantidad
+
+                # Registrar movimiento Kardex SALIDA por anulación
+                kardex = KardexMovimiento(
+                    producto_id=producto.id,
+                    tipo_movimiento="SALIDA",
+                    cantidad=detalle.cantidad,
+                    costo_ref=detalle.costo_unitario_bs,
+                    origen_id=compra.id,
+                    fecha=datetime.now(timezone.utc),
+                )
+                db.add(kardex)
+
+        # 2. Ajustar/cancelar la CxP asociada
+        cxp = db.scalar(select(CuentaPorPagar).where(CuentaPorPagar.compra_id == compra_id))
+        if cxp:
+            cxp.saldo_pendiente_bs = Decimal("0.00")
+
+        # 3. Cambiar estado de la compra a ANULADA
+        compra.estado = "ANULADA"
+
+        # 4. Registrar en bitácora de auditoría
+        bitacora = BitacoraAuditoria(
+            usuario_id=usuario.id,
+            modulo="compras",
+            accion="anular_compra",
+            detalles=f"Compra {compra.numero_control} anulada, stock reducido, CxP cancelada",
+            ip_address="127.0.0.1",  # En producción obtener IP real
+        )
+        db.add(bitacora)
+
+        db.commit()
+
+    except Exception as e:
+        db.rollback()
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Error al anular compra: {str(e)}"},
+        )
+
+    return JSONResponse(
+        status_code=200,
+        content={
+            "ok": True,
+            "compra_id": compra.id,
+            "numero_control": compra.numero_control,
+            "mensaje": "Compra anulada exitosamente",
         },
     )

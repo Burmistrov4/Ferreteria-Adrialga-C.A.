@@ -62,6 +62,7 @@ class Compra(Base):
         ForeignKey("proveedores.id"), nullable=False
     )
     usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), nullable=False)
+    estado: Mapped[str] = mapped_column(String(20), default="PROCESADA")
     subtotal_bs: Mapped[Decimal] = mapped_column(
         Numeric(12, 2), default=Decimal("0.00")
     )

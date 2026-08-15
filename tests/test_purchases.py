@@ -269,3 +269,120 @@ def test_consultar_rif_invalido_devuelve_error():
     resultado = consultar_rif("INVALIDO")
     assert resultado["success"] is False
     assert "Documento inválido" in resultado["error"]
+
+
+def test_anular_compra_revertir_stock_y_cxp(db: Session):
+    """Prueba la anulación de una compra con reversión de stock y cancelación de CxP."""
+    from app.routers.purchases import crear_compra, anular_compra
+    from app.models import Usuario, Role
+
+    # Setup: crear usuario, proveedor y producto
+    role = Role(nombre="TestRole", descripcion="Rol de prueba")
+    db.add(role)
+    db.flush()
+
+    user = Usuario(
+        nombre_completo="Usuario Prueba",
+        username="usuario_prueba",
+        email="usuario_prueba@example.com",
+        password_hash="hash_prueba",
+        rol_id=role.id,
+        activo=True,
+        es_superuser=False,
+    )
+    db.add(user)
+    db.flush()
+
+    proveedor = Proveedor(
+        rif="J-12345678-9",
+        razon_social="Proveedor Prueba",
+        direccion="Av. Principal",
+        telefono="04141234567",
+        contacto="Contacto Prueba",
+    )
+    db.add(proveedor)
+    db.flush()
+
+    from app.models.inventory import Categoria, ConfiguracionFiscal
+    categoria = Categoria(nombre="Ferretería", descripcion="Categoría de prueba")
+    db.add(categoria)
+    db.flush()
+
+    alicuota = ConfiguracionFiscal(codigo="G16", porcentaje=Decimal("16.00"), descripcion="IVA 16%")
+    db.add(alicuota)
+    db.flush()
+
+    from app.models.inventory import Producto
+    producto = Producto(
+        codigo_barras="000000000002",
+        descripcion="Producto Compra Prueba",
+        categoria_id=categoria.id,
+        alicuota_id=alicuota.id,
+        precio_ref=Decimal("50.00"),
+        stock_actual=Decimal("10.00"),
+        stock_minimo=Decimal("1.00"),
+        activo=True,
+    )
+    db.add(producto)
+    db.flush()
+
+    # Crear tasa REF
+    tasa = TasaRef(monto_bs=Decimal("750.0000"), origen="TEST", fecha=datetime.now(timezone.utc))
+    db.add(tasa)
+    db.flush()
+
+    # Crear compra (CONTADO para que no haya CxP asociada)
+    from app.schemas.purchases import CompraCreate, DetalleCompraCreate
+
+    compra_data = CompraCreate(
+        proveedor_id=proveedor.id,
+        numero_control="C-ANULAR-001",
+        subtotal_bs=Decimal("200.00"),
+        iva_bs=Decimal("32.00"),
+        total_bs=Decimal("232.00"),
+        forma_pago="CONTADO",  # Sin CxP
+        dias_credito=0,
+        referencia_pago=None,
+        detalles=[
+            DetalleCompraCreate(
+                producto_id=producto.id,
+                cantidad=Decimal("3.000"),
+                costo_unitario_bs=Decimal("50.00"),
+            )
+        ],
+    )
+
+    response = asyncio.run(crear_compra(data=compra_data, db=db, usuario=user))
+    assert response.status_code == 201
+
+    compra_id = json.loads(response.body.decode())["compra_id"]
+
+    # Verificar stock antes de anular
+    db.refresh(producto)
+    stock_antes = producto.stock_actual
+    assert stock_antes == Decimal("10.00") + Decimal("3.000"), f"Stock esperado: {Decimal('10.00') + Decimal('3.000')}, got: {stock_antes}"
+
+    # Anular la compra llamando directamente a la función del router
+    # (evita problemas de auth en TestClient)
+    response = asyncio.run(anular_compra(compra_id=compra_id, db=db, usuario=user))
+
+    assert response.status_code == 200
+    payload = json.loads(response.body.decode())
+    assert payload["ok"] is True
+    assert payload["numero_control"] == "C-ANULAR-001"
+
+    # Verificar que el stock fue revertido (stock_actual debería volver a 10.00)
+    db.refresh(producto)
+    stock_despues = producto.stock_actual
+    assert stock_despues == Decimal("10.00"), f"Stock expected 10.00, got {stock_despues} after annulation"
+
+    # Verificar que el estado de la compra es ANULADA
+    compra = db.get(Compra, compra_id)
+    assert compra.estado == "ANULADA", f"Expected estado ANULADA, got {compra.estado}"
+
+    # Verificar que la CxP (si existía) tiene saldo 0
+    # Como usamos CONTADO, no debería haber CxP, pero verificamos igualmente
+    cxps = db.get(Compra, compra_id).cuentas_por_pagar
+    if cxps:
+        for cxp in cxps:
+            assert cxp.saldo_pendiente_bs == Decimal("0.00"), f"Expected CxP saldo 0.00, got {cxp.saldo_pendiente_bs}"

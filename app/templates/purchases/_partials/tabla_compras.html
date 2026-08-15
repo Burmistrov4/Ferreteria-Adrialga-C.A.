@@ -1,0 +1,80 @@
+{% if compras %}
+<table class="table table-sm table-hover mb-0">
+    <thead class="table-light">
+        <tr>
+            <th>#</th>
+            <th>Proveedor</th>
+            <th>Número Control</th>
+            <th>Fecha</th>
+            <th>Estado</th>
+            <th>Total Bs.</th>
+            <th class="text-end">Acciones</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for c in compras %}
+        <tr>
+            <td class="fw-mono small">{{ c.id }}</td>
+            <td>
+                {{ c.proveedor_razon }}
+                <small class="text-muted d-block">{{ c.proveedor_rif }}</small>
+            </td>
+            <td>{{ c.numero_control }}</td>
+            <td>{{ c.fecha_compra }}</td>
+            <td>
+                {% if c.estado == 'PROCESADA' %}
+                <span class="badge bg-success">PROCESADA</span>
+                {% else %}
+                <span class="badge bg-secondary">ANULADA</span>
+                {% endif %}
+            </td>
+            <td>Bs {{ "%.2f"|format(c.total_bs) }}</td>
+            <td class="text-end">
+                <button type="button" class="btn btn-sm btn-outline-primary me-1"
+                        title="Ver detalle"
+                        onclick="cargarDetalleCompra('/compras/{{ c.id }}/detalle')">
+                    <i class="bi bi-eye"></i> Ver Detalle
+                </button>
+                {% if c.estado != 'ANULADA' %}
+                <button type="button" class="btn btn-sm btn-outline-danger"
+                        title="Anular compra"
+                        onclick="anularCompra('/compras/{{ c.id }}/anular')">
+                    <i class="bi bi-x-circle"></i> Anular
+                </button>
+                {% else %}
+                <button type="button" class="btn btn-sm btn-outline-secondary" disabled>
+                    <i class="bi bi-x-circle"></i> Anulada
+                </button>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<!-- Paginación -->
+{% if total_pages > 1 %}
+<div class="card-footer bg-white d-flex justify-content-between align-items-center">
+    <span class="small text-muted">Mostrando página {{ page }} de {{ total_pages }} ({{ total }} registros)</span>
+    <nav>
+        <ul class="pagination pagination-sm mb-0">
+            <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+                <a class="page-link" href="#"
+                   hx-get="/compras/tabla?q={{ q }}&page={{ page - 1 }}"
+                   hx-target="#tablaCompras">Anterior</a>
+            </li>
+            <li class="page-item active"><span class="page-link">{{ page }}</span></li>
+            <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
+                <a class="page-link" href="#"
+                   hx-get="/compras/tabla?q={{ q }}&page={{ page + 1 }}"
+                   hx-target="#tablaCompras">Siguiente</a>
+            </li>
+        </ul>
+    </nav>
+</div>
+{% endif %}
+{% else %}
+<div class="text-center text-muted py-4">
+    <i class="bi bi-arrow-right me-1"></i> No se encontraron compras.
+</div>
+{% endif %}

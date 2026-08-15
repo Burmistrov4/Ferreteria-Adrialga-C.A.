@@ -593,6 +593,81 @@ async def crear_categoria(
     return JSONResponse(status_code=201, content={"id": categoria.id, "nombre": categoria.nombre})
 
 
+@router.put("/inventario/categorias/{categoria_id}", response_class=JSONResponse)
+async def actualizar_categoria(
+    request: Request,
+    categoria_id: int,
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("inventario", "escritura")),
+):
+    """Actualiza una categoría existente."""
+    categoria = db.get(Categoria, categoria_id)
+    if not categoria:
+        return JSONResponse(
+            status_code=404,
+            content={"error": "Categoría no encontrada"},
+        )
+
+    form = await request.form()
+    if "nombre" in form:
+        nombre = (form.get("nombre") or "").strip()
+        if not nombre:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "El nombre es obligatorio."},
+            )
+        existente = db.scalar(
+            select(Categoria).where(
+                Categoria.nombre == nombre,
+                Categoria.id != categoria_id,
+            )
+        )
+        if existente:
+            return JSONResponse(
+                status_code=409,
+                content={"error": "Ya existe una categoría con ese nombre."},
+            )
+        categoria.nombre = nombre
+    if "descripcion" in form:
+        categoria.descripcion = (form.get("descripcion") or "").strip()
+
+    db.commit()
+    return JSONResponse(status_code=200, content={"ok": True, "id": categoria.id})
+
+
+@router.delete("/inventario/categorias/{categoria_id}", response_class=JSONResponse)
+async def eliminar_categoria(
+    categoria_id: int,
+    db: Session = Depends(get_db),
+    usuario=Depends(require_permission("inventario", "escritura")),
+):
+    """Elimina una categoría (protegida si tiene productos asociados)."""
+    categoria = db.get(Categoria, categoria_id)
+    if not categoria:
+        return JSONResponse(
+            status_code=404,
+            content={"error": "Categoría no encontrada"},
+        )
+
+    # Proteger categorías con productos asociados
+    productos_asociados = db.scalar(
+        select(func.count())
+        .select_from(Producto)
+        .where(Producto.categoria_id == categoria_id)
+    )
+    if productos_asociados and productos_asociados > 0:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "error": "No se puede eliminar: la categoría tiene productos asociados."
+            },
+        )
+
+    db.delete(categoria)
+    db.commit()
+    return JSONResponse(status_code=200, content={"ok": True})
+
+
 # ============================================================
 # MARCAS (JSON + HTMX)
 # ============================================================

@@ -1,0 +1,168 @@
+{% extends base_template | default('base.html') %}
+
+{% block title %}Clientes - Ventas{% endblock %}
+{% block page_title %}Gestión de Clientes{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col-md-8">
+        <div class="input-group">
+            <span class="input-group-text"><i class="bi bi-search"></i></span>
+            <input type="text" id="buscarCliente" class="form-control" placeholder="Buscar por Cédula/RIF o Razón Social..."
+                   hx-get="/clientes/tabla"
+                   hx-trigger="keyup changed delay:300ms"
+                   hx-target="#tablaClientes"
+                   hx-include="[name='q']"
+                   name="q"
+                   value="">
+        </div>
+    </div>
+    <div class="col-md-4 text-end">
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalCliente">
+            <i class="bi bi-person-plus me-1"></i> Nuevo Cliente
+        </button>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header bg-white">
+        <h6 class="mb-0">Clientes Registrados</h6>
+    </div>
+    <div class="card-body p-0" id="tablaClientes">
+        <!-- Tabla cargada vía HTMX -->
+        <div class="text-center text-muted py-4">
+            <i class="bi bi-arrow-repeat me-1"></i> Cargando...
+        </div>
+    </div>
+</div>
+
+<!-- Modal Crear/Editar Cliente -->
+<div class="modal fade" id="modalCliente" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalClienteTitle">Nuevo Cliente</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <form id="formCliente">
+                    <input type="hidden" id="clienteId">
+                    <div class="mb-2">
+                        <label class="form-label small">Cédula/RIF</label>
+                        <input type="text" id="cedulaRif" class="form-control form-control-sm" required maxlength="12" placeholder="Ej: V-12345678">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small">Razón Social</label>
+                        <input type="text" id="razonSocial" class="form-control form-control-sm" required maxlength="150" placeholder="Nombre o razón social">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small">Dirección</label>
+                        <textarea id="direccion" class="form-control form-control-sm" rows="2" placeholder="Dirección fiscal"></textarea>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small">Teléfono</label>
+                        <input type="text" id="telefono" class="form-control form-control-sm" maxlength="20" placeholder="Ej: 0412-1234567">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small">Email</label>
+                        <input type="email" id="email" class="form-control form-control-sm" maxlength="120" placeholder="cliente@correo.com">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small">Límite de Crédito (Bs)</label>
+                        <input type="number" id="limiteCredito" class="form-control form-control-sm" step="0.01" min="0" value="0.00">
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm w-100">
+                        <i class="bi bi-check-lg me-1"></i> Guardar
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Cargar tabla inicial
+document.addEventListener('DOMContentLoaded', function() {
+    htmx.ajax('GET', '/clientes/tabla', { target: '#tablaClientes' });
+});
+
+// Abrir modal para editar
+function editarCliente(id, cedula, razon, direccion, telefono, email, limite) {
+    document.getElementById('modalClienteTitle').textContent = 'Editar Cliente';
+    document.getElementById('clienteId').value = id;
+    document.getElementById('cedulaRif').value = cedula;
+    document.getElementById('razonSocial').value = razon;
+    document.getElementById('direccion').value = direccion || '';
+    document.getElementById('telefono').value = telefono || '';
+    document.getElementById('email').value = email || '';
+    document.getElementById('limiteCredito').value = limite || '0.00';
+    new bootstrap.Modal(document.getElementById('modalCliente')).show();
+}
+
+// Reset modal al abrir para crear
+document.getElementById('modalCliente').addEventListener('show.bs.modal', function() {
+    if (!document.getElementById('clienteId').value) {
+        document.getElementById('modalClienteTitle').textContent = 'Nuevo Cliente';
+        document.getElementById('formCliente').reset();
+        document.getElementById('limiteCredito').value = '0.00';
+    }
+});
+
+// Enviar formulario (crear o editar)
+document.getElementById('formCliente').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const id = document.getElementById('clienteId').value;
+    const data = {
+        cedula_rif: document.getElementById('cedulaRif').value,
+        razon_social: document.getElementById('razonSocial').value,
+        direccion: document.getElementById('direccion').value || null,
+        telefono: document.getElementById('telefono').value || null,
+        email: document.getElementById('email').value || null,
+        limite_credito: parseFloat(document.getElementById('limiteCredito').value) || 0,
+    };
+
+    const url = id ? `/clientes/${id}` : '/clientes';
+    const method = id ? 'PUT' : 'POST';
+
+    try {
+        const resp = await fetch(url, {
+            method: method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+        const result = await resp.json();
+
+        if (resp.ok) {
+            bootstrap.Modal.getInstance(document.getElementById('modalCliente')).hide();
+            htmx.ajax('GET', '/clientes/tabla', { target: '#tablaClientes' });
+        } else {
+            alert('Error: ' + result.error);
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+});
+
+// Cambiar estado (activar/desactivar)
+async function cambiarEstadoCliente(id, activo) {
+    const formData = new FormData();
+    formData.append('activo', activo ? 'true' : 'false');
+
+    try {
+        const resp = await fetch(`/clientes/${id}/estado`, {
+            method: 'PATCH',
+            body: formData,
+        });
+        const result = await resp.json();
+
+        if (resp.ok) {
+            htmx.ajax('GET', '/clientes/tabla', { target: '#tablaClientes' });
+        } else {
+            alert('Error: ' + result.error);
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+}
+</script>
+{% endblock %}

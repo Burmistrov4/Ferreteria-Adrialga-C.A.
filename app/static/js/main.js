@@ -3,26 +3,74 @@
 // ============================================================
 
 document.addEventListener('DOMContentLoaded', function () {
-    // Toggle del sidebar en móvil
     const sidebarToggle = document.getElementById('sidebarToggle');
     const sidebar = document.getElementById('sidebar');
 
-    if (sidebarToggle && sidebar) {
-        sidebarToggle.addEventListener('click', function () {
-            sidebar.classList.toggle('open');
-            document.body.classList.toggle('sidebar-open');
-        });
+    // Crear overlay dinámicamente si no existe
+    let overlay = document.querySelector('.sidebar-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.className = 'sidebar-overlay';
+        document.body.appendChild(overlay);
     }
+
+    function openSidebar() {
+        if (sidebar) sidebar.classList.add('open');
+        overlay.classList.add('active');
+        document.body.classList.add('sidebar-open');
+    }
+
+    function closeSidebar() {
+        if (sidebar) sidebar.classList.remove('open');
+        overlay.classList.remove('active');
+        document.body.classList.remove('sidebar-open');
+    }
+
+    function toggleSidebar() {
+        if (sidebar && sidebar.classList.contains('open')) {
+            closeSidebar();
+        } else {
+            openSidebar();
+        }
+    }
+
+    if (sidebarToggle && sidebar) {
+        sidebarToggle.addEventListener('click', toggleSidebar);
+    }
+
+    // Cerrar sidebar al hacer clic en el overlay
+    overlay.addEventListener('click', closeSidebar);
+
+    // Cerrar sidebar con tecla Escape
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape' && sidebar && sidebar.classList.contains('open')) {
+            closeSidebar();
+        }
+    });
 
     // Cerrar sidebar al hacer clic fuera (en móvil)
     document.addEventListener('click', function (event) {
-        if (window.innerWidth <= 991.98 && sidebar && document.body.classList.contains('sidebar-open')) {
+        if (window.innerWidth <= 768 && sidebar && document.body.classList.contains('sidebar-open')) {
             if (!sidebar.contains(event.target) && !event.target.closest('#sidebarToggle')) {
-                sidebar.classList.remove('open');
-                document.body.classList.remove('sidebar-open');
+                closeSidebar();
+            }
+        } else if (window.innerWidth <= 768 && sidebar && !document.body.classList.contains('sidebar-open')) {
+            if (!sidebar.contains(event.target) && !event.target.closest('#sidebarToggle')) {
+                openSidebar();
             }
         }
     });
+
+    // Cerrar sidebar al navegar (clic en un enlace del sidebar en móvil)
+    if (sidebar) {
+        sidebar.querySelectorAll('.nav-link').forEach(function (link) {
+            link.addEventListener('click', function () {
+                if (window.innerWidth <= 768) {
+                    closeSidebar();
+                }
+            });
+        });
+    }
 
     // Tooltips de Bootstrap
     const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));

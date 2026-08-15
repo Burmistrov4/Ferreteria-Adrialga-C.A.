@@ -39,6 +39,7 @@ class Cliente(Base):
     limite_credito: Mapped[Decimal] = mapped_column(
         Numeric(12, 2), default=Decimal("0.00")
     )
+    activo: Mapped[bool] = mapped_column(Boolean, default=True)
 
     # Relaciones
     facturas: Mapped[List["Factura"]] = relationship(back_populates="cliente")

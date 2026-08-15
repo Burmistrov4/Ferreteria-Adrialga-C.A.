@@ -1,0 +1,5 @@
+CRITICAL AGENT RULES:
+1. NEVER use native 'write_to_file', 'replace_in_file', or 'apply_diff' tools. They fail due to API parameter errors.
+2. To create or edit files, ALWAYS execute terminal commands using PowerShell (e.g., Set-Content) or write a quick Python script to write the file content.
+3. NEVER run interactive terminal commands that wait for user input.
+4. If a test or command fails, fix the code and retry automatically.

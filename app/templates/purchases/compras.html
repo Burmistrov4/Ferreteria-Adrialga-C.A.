@@ -1,25 +1,50 @@
 {% extends base_template | default('base.html') %}
 
-{% block title %}Compras - Proveedores{% endblock %}
-{% block page_title %}Registro de Compras{% endblock %}
+{% block title %}Compras - Ferretería{% endblock %}
+{% block page_title %}Gestión de Compras{% endblock %}
 
 {% block content %}
-<style>
-.compra-card { border: 1px solid #dee2e6; border-radius: 0.5rem; padding: 1.5rem; }
-</style>
-
-<div class="row">
-    <div class="col-md-12">
-        <div class="compra-card">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <h5 class="mb-0">Nueva Compra</h5>
-                <button class="btn btn-primary btn-sm" onclick="mostrarFormularioCompra()">
-                    <i class="bi bi-plus-circle me-1"></i> Nueva Compra
-                </button>
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-md-8">
+            <div class="input-group">
+                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                <input type="text" id="buscarCompra" class="form-control"
+                       placeholder="Buscar por proveedor, RIF o número de control..."
+                       hx-get="/compras/tabla"
+                       hx-trigger="keyup changed delay:300ms"
+                       hx-target="#tablaCompras"
+                       name="q"
+                       value="{{ q }}">
             </div>
+        </div>
+        <div class="col-md-4 text-end">
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalCompraNueva">
+                <i class="bi bi-person-plus me-1"></i> Nueva Compra
+            </button>
+        </div>
+    </div>
 
-            <div id="formularioCompra" style="display: none;">
+    <!-- Tabla de compras (cargada vía HTMX) -->
+    <div class="card shadow-sm" id="tablaCompras">
+        {% include "purchases/_partials/tabla_compras.html" %}
+    </div>
+</div>
+
+<!-- Modal Detalle Compra (cargado vía HTMX) -->
+<div id="modalDetalleCompraPlaceholder"></div>
+
+<!-- Modal Crear Compra -->
+<div class="modal fade" id="modalCompraNueva" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Nueva Compra</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
                 <form id="formCompra">
+                    <input type="hidden" id="compraId">
                     <div class="row g-2">
                         <div class="col-md-4">
                             <label class="form-label small">Proveedor</label>
@@ -30,7 +55,7 @@
                         </div>
                         <div class="col-md-4">
                             <label class="form-label small">Número de Control</label>
-                            <input type="text" id="numeroControl" class="form-control form-control-sm" 
+                            <input type="text" id="numeroControl" class="form-control form-control-sm"
                                    placeholder="FC-000001" required>
                         </div>
                         <div class="col-md-4">
@@ -45,7 +70,7 @@
                     <div class="row g-2 mt-2" id="diasCreditoRow" style="display: none;">
                         <div class="col-md-4">
                             <label class="form-label small">Días de Crédito</label>
-                            <input type="number" id="diasCredito" class="form-control form-control-sm" 
+                            <input type="number" id="diasCredito" class="form-control form-control-sm"
                                    value="30" min="0">
                         </div>
                     </div>
@@ -71,11 +96,11 @@
                                         </select>
                                     </td>
                                     <td>
-                                        <input type="number" class="form-control form-control-sm cantidad-input" 
+                                        <input type="number" class="form-control form-control-sm cantidad-input"
                                                value="1" min="0.001" step="0.001" required>
                                     </td>
                                     <td>
-                                        <input type="number" class="form-control form-control-sm costo-input" 
+                                        <input type="number" class="form-control form-control-sm costo-input"
                                                value="0" min="0" step="0.01" required>
                                     </td>
                                     <td class="subtotal-cell">Bs 0.00</td>
@@ -124,178 +149,58 @@
 let productos = [];
 let detalles = [];
 
-// Cargar proveedores y productos al iniciar
-async function cargarDatos() {
-    try {
-        // Cargar proveedores desde API JSON
-        const respProv = await fetch('/compras/proveedores/data');
-        if (!respProv.ok) throw new Error('Error al cargar proveedores');
-        const dataProv = await respProv.json();
-        
-        const selectProv = document.getElementById('proveedorId');
-        selectProv.innerHTML = '<option value="">-- Seleccione --</option>';
-        (dataProv.proveedores || []).forEach(p => {
-            const option = document.createElement('option');
-            option.value = p.id;
-            option.textContent = `${p.rif} - ${p.razon_social}`;
-            selectProv.appendChild(option);
-        });
-
-        // Cargar productos desde API JSON
-        const respProd = await fetch('/inventario/productos/data');
-        if (!respProd.ok) throw new Error('Error al cargar productos');
-        const dataProd = await respProd.json();
-        productos = dataProd.productos || [];
-
-        const selectProd = document.querySelector('.producto-select');
-        selectProd.innerHTML = '<option value="">-- Seleccione --</option>';
-        productos.forEach(p => {
-            const option = document.createElement('option');
-            option.value = p.id;
-            option.textContent = `${p.codigo_barras} - ${p.descripcion}`;
-            selectProd.appendChild(option);
-        });
-    } catch (err) {
-        console.error('Error al cargar datos:', err);
-        alert('Error al cargar datos: ' + err.message);
-    }
-}
-
-function mostrarFormularioCompra() {
-    document.getElementById('formularioCompra').style.display = 'block';
-}
-
-function ocultarFormularioCompra() {
-    document.getElementById('formularioCompra').style.display = 'none';
-}
-
-// Cambio de forma de pago
-document.getElementById('formaPago').addEventListener('change', function() {
-    const diasRow = document.getElementById('diasCreditoRow');
-    diasRow.style.display = this.value === 'CREDITO' ? 'block' : 'none';
-});
-
-// Calcular subtotales
-document.querySelector('#tablaDetalles tbody').addEventListener('input', function(e) {
-    if (e.target.classList.contains('cantidad-input') || e.target.classList.contains('costo-input')) {
-        actualizarTotales();
-    }
-});
-
-function actualizarTotales() {
-    let subtotal = 0;
-    document.querySelectorAll('.fila-detalle').forEach(fila => {
-        const cantidad = parseFloat(fila.querySelector('.cantidad-input').value) || 0;
-        const costo = parseFloat(fila.querySelector('.costo-input').value) || 0;
-        const subtotalLinea = cantidad * costo;
-        fila.querySelector('.subtotal-cell').textContent = `Bs ${subtotalLinea.toFixed(2)}`;
-        subtotal += subtotalLinea;
-    });
-
-    const iva = subtotal * 0.16;
-    const total = subtotal + iva;
-
-    document.getElementById('subtotalDisplay').textContent = `Bs ${subtotal.toFixed(2)}`;
-    document.getElementById('ivaDisplay').textContent = `Bs ${iva.toFixed(2)}`;
-    document.getElementById('totalDisplay').textContent = `Bs ${total.toFixed(2)}`;
-}
-
-// Agregar línea de detalle
-function agregarDetalle() {
-    const tbody = document.querySelector('#tablaDetalles tbody');
-    const nuevaFila = document.createElement('tr');
-    nuevaFila.className = 'fila-detalle';
-    nuevaFila.innerHTML = `
-        <td>
-            <select class="form-select form-select-sm producto-select" required>
-                <option value="">-- Seleccione --</option>
-                ${productos.map(p => `<option value="${p.id}">${p.codigo} - ${p.descripcion}</option>`).join('')}
-            </select>
-        </td>
-        <td>
-            <input type="number" class="form-control form-control-sm cantidad-input" 
-                   value="1" min="0.001" step="0.001" required>
-        </td>
-        <td>
-            <input type="number" class="form-control form-control-sm costo-input" 
-                   value="0" min="0" step="0.01" required>
-        </td>
-        <td class="subtotal-cell">Bs 0.00</td>
-        <td>
-            <button type="button" class="btn btn-danger btn-sm btn-remover" onclick="removerDetalle(this)">
-                <i class="bi bi-trash"></i>
-            </button>
-        </td>
-    `;
-    tbody.appendChild(nuevaFila);
-    actualizarTotales();
-}
-
-function removerDetalle(btn) {
-    const fila = btn.closest('tr');
-    if (document.querySelectorAll('.fila-detalle').length > 1) {
-        fila.remove();
-        actualizarTotales();
-    }
-}
-
-// Agregar botón de agregar
-document.querySelector('#tablaDetalles thead').insertAdjacentHTML('beforeend', `
-    <tr>
-        <th colspan="5" class="text-end">
-            <button type="button" class="btn btn-outline-primary btn-sm" onclick="agregarDetalle()">
-                <i class="bi bi-plus"></i> Agregar Producto
-            </button>
-        </th>
-    </tr>
-`);
-
-// Enviar formulario
-document.getElementById('formCompra').addEventListener('submit', async function(e) {
-    e.preventDefault();
-
-    const detalles = [];
-    document.querySelectorAll('.fila-detalle').forEach(fila => {
-        const producto_id = parseInt(fila.querySelector('.producto-select').value);
-        const cantidad = parseFloat(fila.querySelector('.cantidad-input').value);
-        const costo_unitario = parseFloat(fila.querySelector('.costo-input').value);
-        const subtotal = cantidad * costo_unitario;
-        
-        detalles.push({ producto_id, cantidad, costo_unitario_bs: costo_unitario });
-    });
-
-    const data = {
-        proveedor_id: parseInt(document.getElementById('proveedorId').value),
-        numero_control: document.getElementById('numeroControl').value,
-        forma_pago: document.getElementById('formaPago').value,
-        dias_credito: parseInt(document.getElementById('diasCredito').value) || 0,
-        subtotal_bs: parseFloat(document.getElementById('subtotalDisplay').textContent.replace('Bs ', '')),
-        iva_bs: parseFloat(document.getElementById('ivaDisplay').textContent.replace('Bs ', '')),
-        total_bs: parseFloat(document.getElementById('totalDisplay').textContent.replace('Bs ', '')),
-        detalles: detalles,
+// Mostrar badge de estado de la compra
+function mostrarEstadoCompra(estado) {
+    const badgeMap = {
+        'PROCESADA': '<span class="badge bg-success">PROCESADA</span>',
+        'ANULADA': '<span class="badge bg-secondary">ANULADA</span>'
     };
+    return badgeMap[estado] || `<span class="badge bg-secondary">ESTADO: ${estado}</span>`;
+}
 
-    try {
-        const resp = await fetch('/compras/nueva', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data),
+// Cargar detalle de compra vía HTMX
+function cargarDetalleCompra(url) {
+    fetch(url)
+        .then(response => response.text())
+        .then(html => {
+            document.getElementById('modalDetalleCompraPlaceholder').innerHTML = html;
+        })
+        .catch(err => {
+            console.error('Error al cargar detalle:', err);
+            alert('Error al cargar el detalle de la compra');
         });
+}
 
-        const result = await resp.json();
-
-        if (resp.ok) {
-            alert('Compra registrada exitosamente');
-            location.reload();
-        } else {
-            alert('Error: ' + result.error);
-        }
-    } catch (err) {
-        alert('Error: ' + err.message);
+// Anular compra vía confirmación
+function anularCompra(url) {
+    if (confirm('¿Está seguro de anular esta compra? Esta acción revertirá el inventario y cancelará la CxP asociada.')) {
+        fetch(url, { method: 'POST' })
+            .then(response => response.json())
+            .then(data => {
+                if (data.ok) {
+                    alert('Compra anulada exitosamente');
+                    location.reload();
+                } else {
+                    alert('Error: ' + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(err => {
+                console.error('Error al anular:', err);
+                alert('Error de conexión al anular la compra');
+            });
     }
-});
+}
 
-// Inicializar
-cargarDatos();
+// Ocultar formulario de nueva compra
+function ocultarFormularioCompra() {
+    document.getElementById('formCompra').reset();
+    var modalEl = document.getElementById('modalCompraNueva');
+    if (modalEl) {
+        var modal = bootstrap.Modal.getInstance(modalEl);
+        if (modal) {
+            modal.hide();
+        }
+    }
+}
 </script>
 {% endblock %}

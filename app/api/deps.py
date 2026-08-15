@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import decode_access_token
 from app.db.database import get_db
-from app.models import Modulo, Permiso, RolPermiso, SesionUsuario, Usuario
+from app.models import Modulo, Permiso, Role, RolPermiso, SesionUsuario, Usuario
 
 # Bearer token para encabezado Authorization
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -167,6 +167,52 @@ def require_permission(modulo_codigo: str, accion: str) -> Callable:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Usuario sin permiso '{accion}' en módulo '{modulo_codigo}'",
+            )
+
+        return usuario
+
+    return dependency
+
+
+def require_roles(allowed_roles: list[str]) -> Callable:
+    """
+    Fábrica de dependencias de autorización RBAC por nombre de rol.
+
+    Valida que el usuario autenticado tenga un rol cuyo nombre esté
+    dentro de `allowed_roles`. El Superusuario siempre tiene acceso.
+
+    Args:
+        allowed_roles: Lista de nombres de rol permitidos
+            (ej. ['Superusuario', 'Administrador', 'Cajero']).
+
+    Returns:
+        Dependencia FastAPI que valida el rol.
+
+    Uso:
+        @app.get("/cxp")
+        def listar_cxp(
+            usuario: Usuario = Depends(require_roles(["Superusuario", "Administrador"])),
+        ):
+            ...
+    """
+
+    def dependency(
+        usuario: Usuario = Depends(get_current_user),
+        db: Session = Depends(get_db),
+    ) -> Usuario:
+        # Superusuario tiene acceso total
+        if usuario.es_superuser:
+            return usuario
+
+        # Cargar rol del usuario
+        rol = db.get(Role, usuario.rol_id)
+        if not rol or rol.nombre not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    f"No tiene permisos para acceder a este recurso. "
+                    f"Roles permitidos: {', '.join(allowed_roles)}"
+                ),
             )
 
         return usuario

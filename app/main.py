@@ -24,7 +24,7 @@ from sqlalchemy import select
 from app.core.config import RENDER_EXTERNAL_URL, BASE_DIR
 from app.db.database import SessionLocal, engine, Base
 from app.models.sales import TasaRef
-from app.routers import auth, dashboard, fiscal, inventory, purchases, sales, seniat
+from app.routers import auth, dashboard, clients, fiscal, inventory, purchases, sales, seniat
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -100,6 +100,7 @@ app.include_router(auth.router)
 app.include_router(dashboard.router)
 app.include_router(inventory.router)
 app.include_router(sales.router)
+app.include_router(clients.router)
 app.include_router(fiscal.router)
 app.include_router(purchases.router)
 app.include_router(seniat.router)

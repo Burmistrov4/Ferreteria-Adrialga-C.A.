@@ -28,6 +28,7 @@ class ClienteBase(BaseModel):
     direccion: Optional[str] = Field(default=None, description="Dirección fiscal")
     telefono: Optional[str] = Field(default=None, max_length=20)
     email: Optional[str] = Field(default=None, max_length=120)
+    limite_credito: Decimal = Field(default=Decimal("0.00"), ge=0, description="Límite de crédito en Bs")
 
 
 class ClienteCreate(ClienteBase):
@@ -39,11 +40,13 @@ class ClienteUpdate(ClienteBase):
     """Schema para actualizar cliente."""
     cedula_rif: Optional[str] = Field(default=None, max_length=12)
     razon_social: Optional[str] = Field(default=None, max_length=150)
+    limite_credito: Optional[Decimal] = Field(default=None, ge=0)
 
 
 class ClienteResponse(ClienteBase):
     """Schema de respuesta para cliente."""
     id: int
+    activo: bool = True
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -139,8 +142,8 @@ class VentaItemCreate(BaseModel):
 class VentaPagoCreate(BaseModel):
     """Pago de la venta."""
     forma_pago_id: int = Field(gt=0)
-    monto_usd: Decimal = Field(ge=0, description="Monto original en USD o BS")
-    monto_ves: Optional[Decimal] = Field(default=None, description="Monto convertido a VES")
+    monto_usd: Optional[Decimal] = Field(default=None, description="Monto en USD (efectivo USD)")
+    monto_ves: Optional[Decimal] = Field(default=None, description="Monto en VES (pago movil, punto o efectivo)")
     referencia: Optional[str] = Field(default=None, max_length=50)
 
 
